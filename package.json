@@ -1,0 +1,14 @@
+{
+    "name": "dominators",
+    "version": "1.0.0",
+    "description": "CFG and dominators",
+    "main": "index.js",
+    "license": "MIT",
+    "bin": {
+        "dia-convert": "convert.js"
+    },
+    "dependencies": {
+        "esprima": "^4.0.0",
+        "estraverse": "^4.2.0"
+    }
+}
