@@ -10,16 +10,20 @@ const
     assert                  = require( 'assert' ),
     { VisitorKeys, Syntax } = require( './defines' ),
     ExtArray                = require( './ext-array' ),
-    BlockArray              = require( './pred-succ' );
+    BlockArray              = require( './pred-succ' ),
+    DominatorBlock = require( './dominators/dominator-block' ),
+    num                     = n => typeof n === 'number' ? n : n ? n.pre : '-';
 
 /** */
-class BasicBlock
+class BasicBlock extends DominatorBlock
 {
     /**
      * @param {BasicBlock[]} preds
      */
     constructor( ...preds )
     {
+        super();
+
         this.allocator = new Error().stack.split( /[\r\n]\s+at\s+/ ).slice( 3 ).join( ', ' );
 
         /** @type {ExtArray<Node>} */
@@ -40,8 +44,8 @@ class BasicBlock
         this.ancestor = null;
         /** @type {?BasicBlock} */
         this.dom = null;
-        /** @type {BasicBlock[]} */
-        this.idom = [];
+        /** @type {BasicBlock} */
+        this.idomParent = null;
         /** @type {BasicBlock[]} */
         this.kids = [];
         /** @type {BasicBlock[]} */
@@ -57,7 +61,7 @@ class BasicBlock
         this.rpost = 0;
 
         this.preds.add( ...preds );
-        this.indent = ( this.preds.one() || { indent: 0 } ).indent;
+        this.indent = (this.preds.one() || { indent: 0 }).indent;
         if ( this.preds.some( p => p.isEntry ) ) this.indent++;
 
         this.isTest = false;
@@ -69,12 +73,27 @@ class BasicBlock
         this.isEntry = false;
         /** @type {BasicBlock} */
         this.isExit = false;
-        this.scope = BasicBlock.scopes ? BasicBlock.scopes.current : null;
+        this.scope  = BasicBlock.scopes ? BasicBlock.scopes.current : null;
         this.unique = 'ORG-???';
 
         /** @type {?BasicBlockList} */
         this.blockList = null;
     }
+
+    // get dom()
+    // {
+    //     if ( !this._dom ) console.log( `Read access on null dom on ${this.pre}` );
+    //     return this._dom;
+    // }
+    //
+    // set dom( v )
+    // {
+    //     const s = !v ? 'null' : v.pre;
+    //
+    //     console.log( `Setting dominator of ${this.pre} to ${s}, semi: ${this.semi}` );
+    //
+    //     this._dom = v;
+    // }
 
     debug_str()
     {
@@ -95,7 +114,7 @@ class BasicBlock
      */
     initialize( pre )
     {
-        this.pre = pre;
+        this.pre    = pre;
         this.unique = 'ORG-' + pre.toString().padStart( 3, '0' );
     }
 
@@ -181,9 +200,9 @@ class BasicBlock
     /**
      * @return {string}
      */
-    label()
+    node_label()
     {
-        return !this.description && this.isTest ? 'TEST' : !this.description ? 'no desc ' + ( this.nodes.length ? this.nodes[ 0 ].type : '-' ) : null;
+        return !this.description && this.isTest ? 'TEST' : !this.description ? 'no desc ' + (this.nodes.length ? this.nodes[ 0 ].type : '-') : null;
     }
 
     /**
@@ -196,7 +215,7 @@ class BasicBlock
             ln  = this.nodes.length && this.nodes[ 0 ].loc && this.nodes[ 0 ].loc.start.line;
 
         if ( this.isEntry || this.isExit ) txt += ':' + this.pre;
-        return txt ? `${txt}:${this.pre}@${ln}` : `unk${ln || ''}`;
+        return txt ? `${txt}:${this.pre}@${ln}` : `unk:${this.pre}@${ln || ''}`;
     }
 
     /**
@@ -235,14 +254,17 @@ class BasicBlock
         let nodeStr   = this.nodes.map( n => `${n}` ).join( ', ' ),
             ps        = this.pred_succ(),
             rep       = ' '.repeat( Math.max( 0, this.indent * 4 ) ),
-            className = this.get_class_name();
+            className = this.get_class_name(),
+            doms      = `${num( this.dom )}/${num( this.idomParent )}/${this.preNumber}/${this.postNumber}:${this.rpost}`;
 
         if ( className ) className = className + '.';
 
         if ( !this.description && this.isTest ) this.description = 'TEST';
-        else if ( !this.description ) this.description = 'no desc ' + ( this.nodes.length ? this.nodes[ 0 ].type : '-' );
+        else if ( !this.description ) this.description = 'no desc ' + (this.nodes.length ? this.nodes[ 0 ].type : '-');
 
-        nodeStr = `${ps} ${this.isEntry ? '==>' : this.isExit ? '<==' : '='} ${className}${typeof this.description === 'string' ? this.description : this.description()} // ${nodeStr}`;
+        const desc = typeof this.description === 'string' ? this.description : this.description();
+
+        nodeStr = `${ps} ${this.isEntry ? '==>' : this.isExit ? '<==' : '='} ${className}${desc} // doms: ${doms}, nodes: ${nodeStr}`;
 
         return `${this.unique}: ${rep}${nodeStr}`;
     }
@@ -285,7 +307,7 @@ class BasicBlock
      */
     consequent( block )
     {
-        block = block || this.blockList.block( this );
+        block       = block || this.blockList.block( this );
         this.isTest = true;
         this.isTrue = block;
         this.add_succs( block );
@@ -298,8 +320,8 @@ class BasicBlock
      */
     alternate( block )
     {
-        block = block || this.blockList.block( this );
-        this.isTest = true;
+        block        = block || this.blockList.block( this );
+        this.isTest  = true;
         this.isFalse = block;
         this.add_succs( block );
         return block;
@@ -358,9 +380,9 @@ class BasicBlock
      */
     source( name, type, loc, range )
     {
-        this.name = name || 'anonymous';
-        this.type = type;
-        this.loc = loc;
+        this.name  = name || 'anonymous';
+        this.type  = type;
+        this.loc   = loc;
         this.range = range;
     }
 
@@ -379,13 +401,13 @@ class BasicBlock
      */
     source_info()
     {
-        let typed = this.type || ( this.nodes.length && this.nodes[ 0 ].type ) || '',
-            loc   = ( this.loc && this.loc.start && this.loc.start.line && `, line ${this.loc.start.line}` ) || ( this.range && this.range.offset && `, offset: ${this.range.offset}` ) || '';
+        let typed = this.type || (this.nodes.length && this.nodes[ 0 ].type) || '',
+            loc   = (this.loc && this.loc.start && this.loc.start.line && `, line ${this.loc.start.line}`) || (this.range && this.range.offset && `, offset: ${this.range.offset}`) || '';
 
         if ( this.loc && this.loc.end )
-            loc += ` (${this.loc.end.line - this.loc.start.line + 1} lines)`;
+            loc += `( ${this.loc.end.line - this.loc.start.line + 1} lines )`;
 
-        return `[${typed}] ${this.name}${loc}`;
+        return `[ ${typed} ] ${this.name}${loc}`;
     }
 
     /**
@@ -397,7 +419,7 @@ class BasicBlock
         // console.log( `In ${this.pre}, we're replacing ${oldBlock.pre} in predecessors with [ ${newBlocks.map( nb => nb.pre )} ]` );
         this.preds.delete( oldBlock );
         let added = this.preds.add( ...newBlocks );
-        added = Array.isArray( added ) ? added : added ? [ added ] : [];
+        added     = Array.isArray( added ) ? added : added ? [ added ] : [];
         added.forEach( p => this.blockList.edgeList.add( p, this ) );
     }
 
@@ -415,7 +437,7 @@ class BasicBlock
 
         this.succs.delete( oldBlock );
         let added = this.succs.add( ...newBlocks );
-        added = Array.isArray( added ) ? added : added ? [ added ] : [];
+        added     = Array.isArray( added ) ? added : added ? [ added ] : [];
         added.forEach( s => this.blockList.edgeList.add( this, s ) );
     }
 

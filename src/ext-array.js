@@ -6,6 +6,9 @@
  *********************************************************************************************************************/
 "use strict";
 
+const
+    SORT = Symbol( 'sort' );
+
 /**
  * @template T
  */
@@ -17,7 +20,22 @@ class ExtArray extends Array
     constructor( ...args )
     {
         super( ...args );
-        this.__sort = null;
+        Object.defineProperty( this, SORT, { enumerable: false, writable: true, value: null } );
+    }
+
+    /**
+     * @param {function} predicate
+     * @return {*[]}
+     */
+    partition( predicate )
+    {
+        let matches    = new this.constructor(),
+            mismatches = new this.constructor(),
+            both       = [ matches, mismatches ];
+
+        this.forEach( el => both[ predicate( el ) ? 0 : 1 ].push( el ) );
+
+        return both;
     }
 
     /**
@@ -52,7 +70,7 @@ class ExtArray extends Array
         const added = [];
 
         el.forEach( e => e && !this.includes( e ) && ( added[ added.length ] = this[ this.length ] = e ) );
-        if ( this.__sort ) this.sort( this.__sort );
+        if ( this[ SORT ] ) this.sort( this[ SORT ] );
 
         return added.length === 1 ? added[ 0 ] : added;
     }
@@ -70,8 +88,8 @@ class ExtArray extends Array
     /** */
     order()
     {
-        if ( this.__sort )
-            this.sort( this.__sort );
+        if ( this[ SORT ] )
+            this.sort( this[ SORT ] );
         else
             this.sort();
 
@@ -128,5 +146,7 @@ class ExtArray extends Array
         return this;
     }
 }
+
+ExtArray.SORT = SORT;
 
 module.exports = ExtArray;

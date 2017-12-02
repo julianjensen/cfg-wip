@@ -6,68 +6,55 @@
  *********************************************************************************************************************/
 "use strict";
 
-const
-    assert            = require( 'assert' ),
-    { EdgeList }      = require( './edge' ),
-    BasicBlock        = require( './basic-block' ),
-    /**
-     * @param {Array<any>} elements
-     * @param {function} predicate
-     * @return {*[]}
-     */
-    partition         = ( elements, predicate ) => {
-        let matches    = [],
-            mismatches = [],
-            both       = [ matches, mismatches ];
-
-        elements.forEach( el => both[ predicate( el ) ? 0 : 1 ].push( el ) );
-
-        return both;
-    },
-    defaultDotOptions = {
-        defaults:      {
-            default:   '#0D3B66',
-            bgcolor:   'white',
-            color:     '#0D3B66',
-            fontcolor: '#0D3B66',
-            fontname:  'arial',
-            shape:     'ellipse',
-            nodesep:   1.5,
-            margin:    [ 0.5, 0.2 ]
-        },
-        node:          {
-            style:     'rounded',
-            color:     '#0D3B66',
-            fontcolor: '#0D3B66'
-        },
-        test:          {
-            style:     'rounded',
-            color:     '#F95738',
-            fontcolor: '#F95738',
-            shape:     'diamond'
-        },
-        entry:         {
-            style: 'rounded',
-            shape: 'box',
-            color: '#C6AC4D'
-        },
-        exit:          {
-            style: 'rounded',
-            shape: 'box',
-            color: '#C6AC4D'
-        },
-        unconditional: {
-            color: '#0D3B65'
-        },
-        conditional:   {
-            color:     '#F95738',
-            fontname:  'arial italic',
-            style:     'dashed',
-            fontcolor: '#F95738',
-            label:     'true'
-        }
-    };
-
+const assert            = require( 'assert' ),
+      ExtArray          = require( './ext-array' ),
+      BlockArray        = require( './pred-succ' ),
+      { EdgeList }      = require( './edge' ),
+      BasicBlock        = require( './basic-block' ),
+      { Dominators }    = require( './dominators/dominators' ),
+      defaultDotOptions = {
+          defaults:      {
+              default:   '#0D3B66',
+              bgcolor:   'white',
+              color:     '#0D3B66',
+              fontcolor: '#0D3B66',
+              fontname:  'arial',
+              shape:     'ellipse',
+              nodesep:   1.5,
+              margin:    [ 0.5, 0.2 ]
+          },
+          node:          {
+              style:     'rounded',
+              color:     '#0D3B66',
+              fontcolor: '#0D3B66'
+          },
+          test:          {
+              style:     'rounded',
+              color:     '#F95738',
+              fontcolor: '#F95738',
+              shape:     'diamond'
+          },
+          entry:         {
+              style: 'rounded',
+              shape: 'box',
+              color: '#C6AC4D'
+          },
+          exit:          {
+              style: 'rounded',
+              shape: 'box',
+              color: '#C6AC4D'
+          },
+          unconditional: {
+              color: '#0D3B65'
+          },
+          conditional:   {
+              color:     '#F95738',
+              fontname:  'arial italic',
+              style:     'dashed',
+              fontcolor: '#F95738',
+              label:     'true'
+          }
+      };
 
 /**
  * @typedef {object} BlockEdge
@@ -82,15 +69,17 @@ class BasicBlockList
      */
     constructor()
     {
-        BasicBlock.pre = 0;
-        this._asArray = [];
-        this._edges = [];
-        this._conditional = [];
+        BasicBlock.pre      = 0;
+        this._asArray       = [];
+        this._asPostOrder   = [];
+        this._edges         = [];
+        this._conditional   = [];
         this._unconditional = [];
-        this.isDirty = true;
-        this.base = defaultDotOptions.defaults;
-        this.edgeList = new EdgeList();
-        this.blocks = new Set();
+        this.isDirty        = true;
+        this.base           = defaultDotOptions.defaults;
+        this.edgeList       = new EdgeList();
+        this.blocks         = new Set();
+        this.name           = 'Unnamed';
     }
 
     /**
@@ -98,10 +87,7 @@ class BasicBlockList
      */
     entry_and_exit()
     {
-        return [
-            this.entry = this.block().right().entry(),
-            this.exit = this.block().exit()
-        ];
+        return [ this.entry = this.block().right().entry(), this.exit = this.block().exit() ];
     }
 
     /**
@@ -110,7 +96,7 @@ class BasicBlockList
      */
     block( ...preds )
     {
-        const b = new BasicBlock( ...preds );
+        const b     = new BasicBlock( ...preds );
         b.blockList = this;
         this.blocks.add( b );
         return b;
@@ -145,10 +131,11 @@ class BasicBlockList
      */
     __refresh( force )
     {
-        if ( !force && ( !this.entry || !this.isDirty ) ) return;
-        this.isDirty = false;
-        this._asArray = this.map_to_array();
-        this._edges = this._map_to_edges();
+        if ( !force && (!this.entry || !this.isDirty) ) return;
+        this.isDirty      = false;
+        this._asArray     = this.map_to_array();
+        this._asPostOrder = this._asArray.sort( ( a, b ) => a.postNumber - b.postNumber );
+        this._edges       = this._map_to_edges();
         this._partition();
     }
 
@@ -159,6 +146,15 @@ class BasicBlockList
     {
         this.__refresh();
         return this._asArray;
+    }
+
+    /**
+     * @return {Array<BasicBlock>}
+     */
+    get asPostOrder()
+    {
+        this.__refresh();
+        return this._asPostOrder;
     }
 
     /**
@@ -193,7 +189,8 @@ class BasicBlockList
      */
     _partition()
     {
-        [ this._conditional, this._unconditional ] = partition( this.edges.map( e => e.asIndex() ), ( { from, to } ) => this.get( from ).isTrue === this.get( to ) );
+        [ this._conditional, this._unconditional ] = this.edges.partition( ( { from, to } ) => from.isTrue === to );
+        // [ this._conditional, this._unconditional ] = partition( this.edges.map( e => e.asIndex() ), ( { from, to } ) => this.get( from ).isTrue === this.get( to ) );
     }
 
     /**
@@ -201,16 +198,19 @@ class BasicBlockList
      */
     _renumber()
     {
-        const
-            blocks = this.map_to_array( true );
+        const blocks = this.map_to_array( true );
 
         // This is a `for` loop because the built-ins skip holes in sparse arrays
-        for ( let offset = 0, n = 0; n < blocks.length; n++ )
+        for ( let offset = 0,
+                  n      = 0; n < blocks.length; n++ )
         {
-            if ( !blocks[ n ] )
-                offset--;
+            if ( !blocks[ n ] ) offset--;
             else if ( offset )
+            {
                 blocks[ n ].pre += offset;
+                blocks[ n ].rpost += offset;
+                blocks[ n ].semi = blocks[ n ].pre;
+            }
         }
 
         this.edgeList.renumber();
@@ -263,7 +263,7 @@ class BasicBlockList
      */
     _map_to_edges()
     {
-        return this._asArray.reduce( ( edges, b ) => edges.concat( b.succ_edges() ), [] );
+        return this._asArray.reduce( ( edges, b ) => edges.concat( b.succ_edges() ), new ExtArray() );
     }
 
     /**
@@ -272,14 +272,13 @@ class BasicBlockList
      */
     map_to_array( sparse = false )
     {
-        const
-            _blocks = [];
+        const _blocks = new BlockArray();
 
-            this.walk( sparse ? b => _blocks[ b.pre ] = b : b => _blocks.push( b ) );
+        this.walk( sparse ? b => _blocks[ b.pre ] = b : b => _blocks.push( b ) );
         // this.walk( b => _blocks[ b.pre - 1 ] = b );
 
-
-        return sparse ? _blocks : _blocks.sort( ( a, b ) => a.pre - b.pre );
+        return _blocks;
+        // return sparse ? _blocks : _blocks.order(); // sort( ( a, b ) => a.pre - b.pre );
     }
 
     /**
@@ -287,7 +286,8 @@ class BasicBlockList
      */
     entryExit()
     {
-        let en, ex;
+        let en,
+            ex;
 
         this.walk( b => {
             if ( b.isEntry ) en = b;
@@ -329,8 +329,7 @@ class BasicBlockList
      */
     initial_walk()
     {
-        const
-            _ = new Set();
+        const _ = new Set();
 
         // console.log( 'early:', [ ...this.blocks ].map( b => b.debug_str() ).join( '\n' ) );
 
@@ -342,14 +341,13 @@ class BasicBlockList
         /**
          * @param {BasicBlock} n
          */
-        ( function pre_walk( n ) {
+        (function pre_walk( n ) {
 
             if ( _.has( n ) ) return;
 
             _.add( n );
 
-            if ( !_this.blocks.has( n ) )
-                throw new Error( `Initializing an unknown node ${n}` );
+            if ( !_this.blocks.has( n ) ) throw new Error( `Initializing an unknown node ${n}` );
 
             n.preds.order();
             n.succs.order();
@@ -357,14 +355,14 @@ class BasicBlockList
             count++;
             n.rpost = n.pre = 0;
             n.succs.order().forEach( pre_walk );
-        } )( this.entry );
+        })( this.entry );
 
         postorder = count;
 
         /**
          * @param {BasicBlock} n
          */
-        ( function dfs( n ) {
+        (function dfs( n ) {
             n.initialize( preorder );
             n.pre = preorder++;
             n.succs.forEach( S => {
@@ -376,21 +374,22 @@ class BasicBlockList
                     _this.edgeList.classify_edge( n, S, 'tree edge' );
                     dfs( S );
                 }
-                else if ( S.rpost === 0 )
-                    _this.edgeList.classify_edge( n, S, 'back edge' );
-                else if ( n.pre < S.pre )
-                    _this.edgeList.classify_edge( n, S, 'forward edge' );
-                else
-                    _this.edgeList.classify_edge( n, S, 'cross edge' );
+                else if ( S.rpost === 0 ) _this.edgeList.classify_edge( n, S, 'back edge' );
+                else if ( n.pre < S.pre ) _this.edgeList.classify_edge( n, S, 'forward edge' );
+                else _this.edgeList.classify_edge( n, S, 'cross edge' );
             } );
             n.rpost = postorder--;
-        } )( this.entry );
+        })( this.entry );
 
         // this.asArray.forEach( b => console.log( b.debug_str() ) );
 
         // console.log( `before drop:\n\n${this}\n` );
         this.drop();
         // console.log( `after drop:\n\n${this}\n` );
+        process.stdout.write( `Start dominator calculations for "${this.name}"... ` );
+        // console.log( `Start dominator calculations for "${this.name}"... ` );
+        this.dominators = new Dominators( this );
+        console.log( 'done' );
         return this;
     }
 
@@ -401,58 +400,56 @@ class BasicBlockList
      */
     dot( title, dotOptions = {} )
     {
-        const
-            /**
-             * @param {Edge} edge
-             * @return {string}
-             */
-            formatEdge           = edge => {
-                const
-                    from = this.get( edge.from ),
-                    to = this.get( edge.to ),
-                    label        = from.label() || '',
-                    escapedLabel = label.replace( /"/g, '\\"' ),
-                    attributes   = label ? ` [label = " ${escapedLabel}"]` : "";
+        const /**
+               * @param {Edge} edge
+               * @return {string}
+               */
+              formatEdge           = edge => {
+                  const from         = this.get( edge.from ),
+                        to           = this.get( edge.to ),
+                        label        = from.node_label() || '',
+                        escapedLabel = label.replace( /"/g, '\\"' ),
+                        attributes   = label ? ` [label = " ${escapedLabel}"]` : "";
 
-                return `${from.pre} -> ${to.pre}${attributes}`;
-            },
+                  return `${from.pre} -> ${to.pre}${attributes}`;
+              },
 
-            neat                 = a => Array.isArray( a ) ? `"${a.join( ', ' )}"` : `"${a}"`,
-            toStr                = ( o, eol = '' ) => {
-                if ( !o ) return [];
-                const strs = Object.entries( o ).map( ( [ name, value ] ) => `${name} = ${neat( value )}${eol}` );
+              neat                 = a => Array.isArray( a ) ? `"${a.join( ', ' )}"` : `"${a}"`,
+              toStr                = ( o, eol = '' ) => {
+                  if ( !o ) return [];
+                  const strs = Object.entries( o ).map( ( [ name, value ] ) => `${name} = ${neat( value )}${eol}` );
 
-                if ( !eol ) return strs.join( ', ' );
+                  if ( !eol ) return strs.join( ', ' );
 
-                return strs;
-            },
+                  return strs;
+              },
 
-            diffs                = o => {
-                if ( !o ) return null;
+              diffs                = o => {
+                  if ( !o ) return null;
 
-                const d = {
-                    color:     defaultDotOptions.defaults.color,
-                    fontcolor: defaultDotOptions.defaults.fontcolor,
-                    fontname:  defaultDotOptions.defaults.fontname
-                };
+                  const d = {
+                      color:     defaultDotOptions.defaults.color,
+                      fontcolor: defaultDotOptions.defaults.fontcolor,
+                      fontname:  defaultDotOptions.defaults.fontname
+                  };
 
-                Object.entries( o ).forEach( ( [ key, value ] ) => this.base[ key ] !== value && ( d[ key ] = value ) );
+                  Object.entries( o ).forEach( ( [ key, value ] ) => this.base[ key ] !== value && (d[ key ] = value) );
 
-                return Object.keys( d ).length ? d : null;
-            },
-            merge                = key => Object.assign( {}, defaultDotOptions[ key ], dotOptions[ key ] || {} ),
+                  return Object.keys( d ).length ? d : null;
+              },
+              merge                = key => Object.assign( {}, defaultDotOptions[ key ], dotOptions[ key ] || {} ),
 
-            defaults             = toStr( this.base, ';' ),
-            node                 = toStr( diffs( merge( 'node' ) ) ),
-            test                 = toStr( diffs( merge( 'test' ) ) ),
-            entry                = toStr( diffs( merge( 'entry' ) ) ),
-            exit                 = toStr( diffs( merge( 'exit' ) ) ),
-            unconditional        = toStr( diffs( merge( 'unconditional' ) ) ),
-            conditional          = toStr( diffs( merge( 'conditional' ) ) ),
+              defaults             = toStr( this.base, ';' ),
+              node                 = toStr( diffs( merge( 'node' ) ) ),
+              test                 = toStr( diffs( merge( 'test' ) ) ),
+              entry                = toStr( diffs( merge( 'entry' ) ) ),
+              exit                 = toStr( diffs( merge( 'exit' ) ) ),
+              unconditional        = toStr( diffs( merge( 'unconditional' ) ) ),
+              conditional          = toStr( diffs( merge( 'conditional' ) ) ),
 
-            entryAndExitNodeList = this.entryExit(),
+              entryAndExitNodeList = this.entryExit(),
 
-            innerLines           = [ ...defaults ].concat( `labelloc="t";`, `label="${title}";`, `fontsize=30` );
+              innerLines           = [ ...defaults ].concat( `labelloc="t";`, `label="${title}";`, `fontsize=30` );
 
         if ( node ) innerLines.push( `node [${node}];` );
         innerLines.push( `${entryAndExitNodeList[ 0 ]} [label = "entry:${entryAndExitNodeList[ 0 ]}"${entry ? ', ' + entry : ''}];` );
@@ -471,14 +468,9 @@ class BasicBlockList
             innerLines.push( ...this.conditional.map( formatEdge ) );
         }
 
-        let graphLines = [
-            `digraph "${title}" {`,
-            ...innerLines.map( l => '    ' + l ),
-            "}"
-        ];
+        let graphLines = [ `digraph "${title}" {`, ...innerLines.map( l => '    ' + l ), "}" ];
 
-        if ( title )
-            graphLines.unshift( `// ${title}` );
+        if ( title ) graphLines.unshift( `// ${title}` );
 
         return graphLines.join( '\n' );
     }

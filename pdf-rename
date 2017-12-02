@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+PDFTK=`command -v pdftk`
+
+if [ -z $PDFTK ]; then
+    echo You need to have pdftk installed
+    exit 1
+fi
+
+if [ $# -ne 2 ]; then
+    echo Usage:
+    echo '    pdf-rename PDF-FILE NEW-TITLE'
+    exit 1
+fi
+
+safeRunCommand() {
+  local cmnd="$*"
+
+  eval $cmnd
+}
+
+TMPFILE=`mktemp`
+INFILE="$1".bak
+
+mv "$1" "$INFILE"
+"$PDFTK" "$INFILE" dump_data output "$TMPFILE"
+
+FINDTITLE="grep 'InfoKey: Title' $TMPFILE >/dev/null"
+safeRunCommand "$FINDTITLE"
+HASTITLE=$?
+
+if [ $HASTITLE -ne 0 ]; then
+    echo -e "InfoBegin\nInfoKey: Title\nInfoValue: $2\n$(cat $TMPFILE)" >"$TMPFILE"
+else
+    sed -i '/^InfoBegin$/ {
+        $!{ N
+            N
+            s/^InfoBegin\nInfoKey: Title\nInfoValue: .*$/InfoBegin\nInfoKey: Title\nInfoValue: Some New Title/
+            t sub-yes
+            :sub-not
+            P
+            D
+            D
+            :sub-yes
+        }
+    }' "$TMPFILE" >/dev/null
+fi
+
+"$PDFTK" "$INFILE" update_info "$TMPFILE" output "$1"
+
+rm "$TMPFILE"

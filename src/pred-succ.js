@@ -7,7 +7,10 @@
 "use strict";
 
 const
-    ExtArray = require( './ext-array' );
+    ExtArray   = require( './ext-array' ),
+    COMPLEMENT = Symbol( 'complement' ),
+    ADDCB      = Symbol( 'add_cb' ),
+    SORT       = ExtArray.SORT;
 
 /**
  * @class BlockArray<BasicBlock>
@@ -21,8 +24,21 @@ class BlockArray extends ExtArray
     constructor( ...args )
     {
         super( ...args );
-        this.__sort = ( a, b ) => a.pre - b.pre;
-        this.__complement = null;
+        this[ SORT ] = ( a, b ) => a.pre - b.pre;
+        Object.defineProperty( this,
+                               COMPLEMENT,
+                               {
+                                   enumerable: false,
+                                   writable:   true,
+                                   value:      null
+                               } );
+        Object.defineProperty( this,
+                               ADDCB,
+                               {
+                                   enumerable: false,
+                                   writable:   true,
+                                   value:      null
+                               } );
     }
 
     /**
@@ -32,9 +48,9 @@ class BlockArray extends ExtArray
      */
     init( owner, compl, add_cb )
     {
-        this.owner = owner;
-        this.__complement = compl;
-        this.__add_cb = add_cb;
+        this.owner         = owner;
+        this[ COMPLEMENT ] = compl;
+        this[ ADDCB ]      = add_cb;
     }
 
     /**
@@ -48,7 +64,7 @@ class BlockArray extends ExtArray
             const i = this.indexOf( e );
             if ( i === -1 ) return;
             this.splice( i, 1 );
-            e[ this.__complement ].delete( this.owner );
+            e[ this[ COMPLEMENT ] ].delete( this.owner );
         } );
 
         return this;
@@ -64,11 +80,11 @@ class BlockArray extends ExtArray
         added = Array.isArray( added ) ? added : added ? [ added ] : [];
 
         added.forEach( p => {
-            p[ this.__complement ].add( this.owner );
-            this.__add_cb && this.__add_cb( p );
+            p[ this[ COMPLEMENT ] ].add( this.owner );
+            this[ ADDCB ] && this[ ADDCB ]( p );
         } );
 
-        const seen = new Set( this );
+        const seen  = new Set( this );
         this.length = 0;
         seen.forEach( n => this[ this.length ] = n );
 

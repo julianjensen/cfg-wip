@@ -107,6 +107,7 @@ class CFGBuilder
                 break;
         }
 
+        this.blockList.name = this.name;
         this.entry.source( this.name, this.root.type, this.root.loc, this.root.range );
         this.entry.indent = this.exit.indent = 0;
 
@@ -128,6 +129,7 @@ class CFGBuilder
         if ( pop ) this.scopes.pop_scope();
 
         this.scopes.finish();
+        this.exit.pre = BasicBlock.pre++;
         this.blockList.initial_walk();
     }
 
