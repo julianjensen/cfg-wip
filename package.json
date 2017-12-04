@@ -8,6 +8,8 @@
         "dia-convert": "convert.js"
     },
     "dependencies": {
+        "chalk": "^2.3.0",
+        "cli-table2": "^0.2.0",
         "esprima": "^4.0.0",
         "estraverse": "^4.2.0"
     }

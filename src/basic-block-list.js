@@ -11,7 +11,7 @@ const assert            = require( 'assert' ),
       BlockArray        = require( './pred-succ' ),
       { EdgeList }      = require( './edge' ),
       BasicBlock        = require( './basic-block' ),
-      { Dominators }    = require( './dominators/dominators' ),
+      { DominatorTreeBuilder, FindDoms } = require( './dominators/dominator-tree-builder' ),
       defaultDotOptions = {
           defaults:      {
               default:   '#0D3B66',
@@ -69,17 +69,17 @@ class BasicBlockList
      */
     constructor()
     {
-        BasicBlock.pre      = 0;
-        this._asArray       = [];
-        this._asPostOrder   = [];
-        this._edges         = [];
-        this._conditional   = [];
+        BasicBlock.pre = 0;
+        this._asArray = [];
+        this._asPostOrder = [];
+        this._edges = [];
+        this._conditional = [];
         this._unconditional = [];
-        this.isDirty        = true;
-        this.base           = defaultDotOptions.defaults;
-        this.edgeList       = new EdgeList();
-        this.blocks         = new Set();
-        this.name           = 'Unnamed';
+        this.isDirty = true;
+        this.base = defaultDotOptions.defaults;
+        this.edgeList = new EdgeList();
+        this.blocks = new Set();
+        this.name = 'Unnamed';
     }
 
     /**
@@ -96,7 +96,7 @@ class BasicBlockList
      */
     block( ...preds )
     {
-        const b     = new BasicBlock( ...preds );
+        const b = new BasicBlock( ...preds );
         b.blockList = this;
         this.blocks.add( b );
         return b;
@@ -131,11 +131,11 @@ class BasicBlockList
      */
     __refresh( force )
     {
-        if ( !force && (!this.entry || !this.isDirty) ) return;
-        this.isDirty      = false;
-        this._asArray     = this.map_to_array();
+        if ( !force && ( !this.entry || !this.isDirty ) ) return;
+        this.isDirty = false;
+        this._asArray = this.map_to_array();
         this._asPostOrder = this._asArray.sort( ( a, b ) => a.postNumber - b.postNumber );
-        this._edges       = this._map_to_edges();
+        this._edges = this._map_to_edges();
         this._partition();
     }
 
@@ -253,6 +253,9 @@ class BasicBlockList
         return this;
     }
 
+    /**
+     * @param {BasicBlock} block
+     */
     delete_edges( block )
     {
         this.edgeList.delete( block );
@@ -341,7 +344,7 @@ class BasicBlockList
         /**
          * @param {BasicBlock} n
          */
-        (function pre_walk( n ) {
+        ( function pre_walk( n ) {
 
             if ( _.has( n ) ) return;
 
@@ -355,14 +358,14 @@ class BasicBlockList
             count++;
             n.rpost = n.pre = 0;
             n.succs.order().forEach( pre_walk );
-        })( this.entry );
+        } )( this.entry );
 
         postorder = count;
 
         /**
          * @param {BasicBlock} n
          */
-        (function dfs( n ) {
+        ( function dfs( n ) {
             n.initialize( preorder );
             n.pre = preorder++;
             n.succs.forEach( S => {
@@ -379,7 +382,7 @@ class BasicBlockList
                 else _this.edgeList.classify_edge( n, S, 'cross edge' );
             } );
             n.rpost = postorder--;
-        })( this.entry );
+        } )( this.entry );
 
         // this.asArray.forEach( b => console.log( b.debug_str() ) );
 
@@ -388,9 +391,97 @@ class BasicBlockList
         // console.log( `after drop:\n\n${this}\n` );
         process.stdout.write( `Start dominator calculations for "${this.name}"... ` );
         // console.log( `Start dominator calculations for "${this.name}"... ` );
-        this.dominators = new Dominators( this );
+        this.lentar_dominators();
+        // this.dominators = new Dominators( this );
         console.log( 'done' );
         return this;
+    }
+
+    /**
+     *
+     */
+    lentar_dominators()
+    {
+        DominatorTreeBuilder( this, BasicBlock.pre );
+
+        // From here we want to build a spanning tree with both upward and downward links and we want
+        // to do a search over this tree to compute pre and post numbers that can be used for dominance
+        // tests.
+
+        this.asArray.reverse().filter( x => !!x ).forEach( block => {
+
+            const idomBlock = block.idomParent = block.dom;
+
+            if ( idomBlock )
+                idomBlock.idomKids.push( block );
+
+            let nextPreNumber  = 0,
+                nextPostNumber = 0;
+
+            // Plain stack-based worklist because we are guaranteed to see each block exactly once anyway.
+
+            const worklist = [ { node: this.entry, order: 1 } ];
+
+            while ( worklist.length )
+            {
+                const { node, order } = worklist.pop();
+
+                switch ( order )
+                {
+                    case 1:
+                        node.preNumber = nextPreNumber++;
+
+                        worklist.push( { node, order: -1 } );
+
+                        for ( const kid of node.idomKids )
+                            worklist.push( { node: kid, order: 1 } );
+                        break;
+
+                    case -1:
+                        node.postNumber = nextPostNumber++;
+                        break;
+                }
+            }
+        } );
+        // for ( let blockIndex = BasicBlock.pre; blockIndex--; )
+        // {
+        //     const block = this.get( blockIndex );
+        //
+        //     if ( !block ) continue;
+        //
+        //     const idomBlock = block.idomParent = block.dom;
+        //
+        //     if ( idomBlock )
+        //         idomBlock.kids.push( block );
+        //
+        //     let nextPreNumber  = 0,
+        //         nextPostNumber = 0;
+        //
+        //     // Plain stack-based worklist because we are guaranteed to see each block exactly once anyway.
+        //
+        //     const worklist = [ { node: this.entry, order: 1 } ];
+        //
+        //     while ( worklist.length )
+        //     {
+        //         const { node, order } = worklist.pop();
+        //
+        //         switch ( order )
+        //         {
+        //             case 1:
+        //                 node.preNumber = nextPreNumber++;
+        //
+        //                 worklist.push( { node, order: -1 } );
+        //
+        //                 for ( const kid of node.kids )
+        //                     worklist.push( { node: kid, order: 1 } );
+        //                 break;
+        //
+        //             case -1:
+        //                 node.postNumber = nextPostNumber++;
+        //                 break;
+        //         }
+        //     }
+        // }
     }
 
     /**
@@ -433,7 +524,7 @@ class BasicBlockList
                       fontname:  defaultDotOptions.defaults.fontname
                   };
 
-                  Object.entries( o ).forEach( ( [ key, value ] ) => this.base[ key ] !== value && (d[ key ] = value) );
+                  Object.entries( o ).forEach( ( [ key, value ] ) => this.base[ key ] !== value && ( d[ key ] = value ) );
 
                   return Object.keys( d ).length ? d : null;
               },

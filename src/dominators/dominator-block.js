@@ -11,9 +11,9 @@ const
         if ( s.has( val ) ) return false;
         s.add( val );
         return true;
-    },
-    BasicBlock = require( '../basic-block' );
+    };
 
+/** */
 class DominatorBlock
 {
     /**
@@ -79,13 +79,13 @@ class DominatorBlock
      */
     forAllBlocksStrictlyDominatedBy( functor )
     {
-        let worklist = this.kids.slice();
+        let worklist = this.idomKids.slice();
 
         while ( worklist.length )
         {
             const block = worklist.pop();
             functor( block );
-            worklist = worklist.concat( block.kids );
+            worklist = worklist.concat( block.idomKids );
         }
     }
 
@@ -100,7 +100,7 @@ class DominatorBlock
         {
             const block = worklist.pop();
             functor( block );
-            worklist = worklist.concat( block.kids );
+            worklist = worklist.concat( block.idomKids );
         }
     }
 
@@ -239,11 +239,7 @@ class DominatorBlock
         const worklist = [ this ];
 
         while ( worklist.length )
-        {
-            const block = worklist.pop();
-
-            this.forAllBlocksInDominanceFrontierOfImpl( otherBlock => functor( otherBlock ) && worklist.push( otherBlock ) );
-        }
+            worklist.pop().forAllBlocksInDominanceFrontierOfImpl( otherBlock => functor( otherBlock ) && worklist.push( otherBlock ) );
     }
 }
 

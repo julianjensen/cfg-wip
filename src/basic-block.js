@@ -24,7 +24,7 @@ class BasicBlock extends DominatorBlock
     {
         super();
 
-        this.allocator = new Error().stack.split( /[\r\n]\s+at\s+/ ).slice( 3 ).join( ', ' );
+        // this.allocator = new Error().stack.split( /[\r\n]\s+at\s+/ ).slice( 3 ).join( ', ' );
 
         /** @type {ExtArray<Node>} */
         this.nodes = new ExtArray();
@@ -47,9 +47,9 @@ class BasicBlock extends DominatorBlock
         /** @type {BasicBlock} */
         this.idomParent = null;
         /** @type {BasicBlock[]} */
-        this.kids = [];
-        /** @type {BasicBlock[]} */
-        this.doms = [];
+        this.idomKids = [];
+        /** @type {?BasicBlock} */
+        this.dom = null;
         /** @type {number} */
         this.preNumber = 0;
         /** @type {number} */
@@ -61,7 +61,7 @@ class BasicBlock extends DominatorBlock
         this.rpost = 0;
 
         this.preds.add( ...preds );
-        this.indent = (this.preds.one() || { indent: 0 }).indent;
+        this.indent = ( this.preds.one() || { indent: 0 } ).indent;
         if ( this.preds.some( p => p.isEntry ) ) this.indent++;
 
         this.isTest = false;
@@ -95,19 +95,20 @@ class BasicBlock extends DominatorBlock
     //     this._dom = v;
     // }
 
-    debug_str()
-    {
-        let str = [];
-
-        if ( this.isEntry ) str.push( 'entry' );
-        if ( this.isExit ) str.push( 'exit' );
-        if ( this.isTest ) str.push( 'test' );
-        // if ( this.isTrue ) str.push( 'true' );
-        // if ( this.isTrue ) str.push( 'false' );
-
-        return `${this.pre} [${str.join( ', ' )}], nodes: ${this.nodes.length}, preds(${this.preds.size}): ${this.preds.map( p => p.pre )}, succs(${this.succs.size}): ${this.succs.map( s => s.pre )}, pedges: ${this.pred_edges().join( ', ' )}, sedges: ${this.succ_edges().join( ', ' )}`;
-        return `${this.pre} [${str.join( ', ' )}], nodes: ${this.nodes.length}, preds(${this.preds.size}): ${this.preds.map( p => p.pre )}, succs(${this.succs.size}): ${this.succs.map( s => s.pre )}`;
-    }
+    // debug_str()
+    // {
+    //     let str = [];
+    //
+    //     if ( this.isEntry ) str.push( 'entry' );
+    //     if ( this.isExit ) str.push( 'exit' );
+    //     if ( this.isTest ) str.push( 'test' );
+    //     // if ( this.isTrue ) str.push( 'true' );
+    //     // if ( this.isTrue ) str.push( 'false' );
+    //
+    //     return `${this.pre} [${str.join( ', ' )}], nodes: ${this.nodes.length}, preds(${this.preds.size}): ${this.preds.map( p => p.pre )}, succs(${this.succs.size}):
+    // ${this.succs.map( s => s.pre )}, pedges: ${this.pred_edges().join( ', ' )}, sedges: ${this.succ_edges().join( ', ' )}`;
+    //     return `${this.pre} [${str.join( ', ' )}], nodes: ${this.nodes.length}, preds(${this.preds.size}): ${this.preds.map( p => p.pre )}, succs(${this.succs.size}): ${this.succs.map( s => s.pre )}`;
+    // }
 
     /**
      * @param {number} pre
@@ -202,7 +203,7 @@ class BasicBlock extends DominatorBlock
      */
     node_label()
     {
-        return !this.description && this.isTest ? 'TEST' : !this.description ? 'no desc ' + (this.nodes.length ? this.nodes[ 0 ].type : '-') : null;
+        return !this.description && this.isTest ? 'TEST' : !this.description ? 'no desc ' + ( this.nodes.length ? this.nodes[ 0 ].type : '-' ) : null;
     }
 
     /**
@@ -260,7 +261,7 @@ class BasicBlock extends DominatorBlock
         if ( className ) className = className + '.';
 
         if ( !this.description && this.isTest ) this.description = 'TEST';
-        else if ( !this.description ) this.description = 'no desc ' + (this.nodes.length ? this.nodes[ 0 ].type : '-');
+        else if ( !this.description ) this.description = 'no desc ' + ( this.nodes.length ? this.nodes[ 0 ].type : '-' );
 
         const desc = typeof this.description === 'string' ? this.description : this.description();
 
