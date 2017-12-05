@@ -163,7 +163,7 @@ function DominatorTreeBuilder( graph, nextBlockNum )
 function llvm( nodes )
 {
     const
-        root = nodes[ 0 ],
+        root  = nodes[ 0 ],
         idoms = [ root ];
 
     let gen;
@@ -175,29 +175,24 @@ function llvm( nodes )
     while ( changed )
     {
         changed = false;
-        DFS( nodes, { rpost: node => {
+        DFS( nodes, {
+            rpost: node => {
 
                 if ( node === root ) return;
 
                 let idom = null;
 
                 node.preds.forEach( p => {
-                    if ( !p ) return;
+                    if ( !idoms[ p.pre ] ) return;
                     if ( !idom )
                         idom = p;
                     else
                     {
-                        if ( p.generation === -1 ) return;
-
                         let b1 = idom,
                             b2 = p;
 
-                        console.log( `node: ${node}` );
-                        console.log( `    idom: ${b1}` );
-                        console.log( `    pred: ${b2}` );
                         while ( b1.post !== b2.post )
                         {
-                            console.log( `b1.post = ${b1.post} !== b2.post = ${b2.post}` );
                             while ( b1.post < b2.post )
                                 b1 = idoms[ b1.pre ];
                             while ( b2.post < b1.post )
@@ -207,13 +202,13 @@ function llvm( nodes )
                     }
                 } );
 
-                console.log( `propcessed ${node.pre + 1}, post: ${node.post + 1}` );
-                node.generation = 0;
                 if ( idoms[ node.pre ] !== idom )
                 {
                     idoms[ node.pre ] = idom;
                     changed = true;
                 }
+
+
             }
         } );
     }
@@ -236,78 +231,63 @@ function FindDoms( nodes, cbs = {} )
     const
         invoke  = caller( cbs ),
         initial = invoke( 'initial' ),
-        iter    = invoke( 'iter' );
+        iter    = invoke( 'iter' ),
+        idoms   = [];
 
-    let changed = true,
-        gen = traversal.generation + 2;
+    let changed = true;
 
     nodes.forEach( n => {
-        n.generation = gen - 1;
-        n.chkDom = null;
-        if ( n.isStart ) n.chkDom = n;
+        // n.generation = gen - 1;
+        // n.chkDom = null;
+        if ( n.isStart ) idoms[ n.pre ] = n.chkDom = n;
     } );
     // nodes[ 0 ].chkDom = nodes[ 0 ];
 
     initial( nodes );
 
     /**
-     * @param {Node} finger1
-     * @param {Node} finger2
-     * @return {*}
-     */
-    function intersect( finger1, finger2 )
-    {
-        while ( finger1.post !== finger2.post )
-        {
-            while ( finger1.post < finger2.post )
-                finger1 = finger1.chkDom;
-            while ( finger2.post < finger1.post )
-                finger2 = finger2.chkDom;
-        }
-
-        return finger1;
-    }
-
-    /**
      * @param {Node} b
      */
-    function idoms( b )
+    function fidoms( b )
     {
-        b.generation = gen;
+        if ( b.isStart ) return;
 
-        if ( !b.pre ) return;
+        let idom;
 
-        let idom = b.preds.find( p => p.generation === traversal.generation );
+        b.preds.forEach( p => {
+            if ( !idoms[ p.pre ] ) return;
+            if ( !idom )
+                idom = p;
+            else
+            {
+                let finger1 = p,
+                    finger2 = idom;
 
-        const fp = b.preds.filter( p => p !== idom );
+                while ( finger1.post !== finger2.post )
+                {
+                    while ( finger1.post < finger2.post )
+                        finger1 = idoms[ finger1.pre ];
+                    while ( finger2.post < finger1.post )
+                        finger2 = idoms[ finger2.pre ];
+                }
 
-        if ( !idom )
-            console.log( `no idom: ${b}` );
+                idom = finger1;
+            }
+        } );
 
-        fp.forEach( p => p.chkDom && ( idom = intersect( p, idom ) ) );
-
-        if ( b.chkDom !== idom )
+        if ( idoms[ b.pre ] !== idom )
         {
-            b.chkDom = idom;
+            idoms[ b.pre ] = idom;
             changed = true;
         }
     }
 
     while ( changed )
     {
-        traversal.generation += 2;
         changed = false;
-        DFS( nodes, { rpost: idoms } );
+        DFS( nodes, { rpost: fidoms } );
         iter( nodes );
     }
-
-    nodes
-        .map( n => {
-            n.domSuccs = [];
-            return n;
-        } )
-        .filter( n => n.chkDom && n.chkDom !== n )
-        .forEach( n => n.chkDom.domSuccs.push( n ) );
 
     /**
      * Find dominance frontiers
@@ -317,27 +297,37 @@ function FindDoms( nodes, cbs = {} )
     function find_frontier( b )
     {
         // b.frontier.add( b );
-        if ( !b.preds.length ) return;
+        if ( b.preds.length < 2 ) return;
 
-        if ( b.preds.length === 1 )
-        {
-            b.preds[ 0 ].frontier.add( b );
-            return;
-        }
+        // if ( b.preds.length === 1 )
+        // {
+        //     b.preds[ 0 ].frontier.add( b );
+        //     return;
+        // }
 
         b.preds.forEach( runner => {
 
-            while ( runner !== b.chkDom )
+            while ( runner !== idoms[ b.pre ] )
             {
                 runner.frontier.add( b );
-                runner = runner.chkDom;
+                runner = idoms[ runner.pre ];
             }
         } );
     }
 
     nodes.forEach( find_frontier );
 
-    traversal.generation = gen;
+    idoms.forEach( ( n, i ) => nodes.find( f => f.pre === i ).chkDom = n );
+
+    nodes
+        .map( n => {
+            n.domSuccs = [];
+            return n;
+        } )
+        .filter( n => n.chkDom && n.chkDom !== n )
+        .forEach( n => n.chkDom.domSuccs.push( n ) );
+
+    // traversal.generation = gen;
     // DFS( nodes, { rpost: find_frontier } );
 }
 

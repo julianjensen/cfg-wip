@@ -117,6 +117,29 @@ function PrePost( root )
 }
 
 /**
+ * @param {Node} root
+ */
+function BFS( root )
+{
+    generation += 2;
+
+    const
+        queue = [ root ];
+
+    let n,
+        preOrder = 0;
+
+    root.generation = generation;
+
+    while ( ( n = queue.shift() ) )
+    {
+        n.bpre = preOrder++;
+
+        queue.push( ...n.succs.filter( c => c.generation < generation ).map( c => ( c.generation = generation, c ) ) );
+    }
+}
+
+/**
  * @param type
  * @param head
  * @param succs
@@ -149,7 +172,7 @@ function generic( { type, head, succs = n => n.succs, callback } )
     _walk( head );
 }
 
-module.exports = { DFS, PrePost, generic };
+module.exports = { DFS, BFS, PrePost, generic };
 Object.defineProperty( module.exports, 'generation', {
     get() { return generation; },
     set() { return generation; }
