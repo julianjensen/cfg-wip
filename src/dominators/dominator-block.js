@@ -16,13 +16,59 @@ const
 /** */
 class DominatorBlock
 {
+    constructor()
+    {
+        this.resetLT();
+    }
+
+    get preNumber()
+    {
+        return this.pre;
+    }
+
+    set preNumber( v )
+    {
+        this.pre = v;
+    }
+
+    post_init()
+    {
+        if ( this.parent ) this.ancestor = this.parent;
+    }
+
+    resetLT()
+    {
+        this.preDom  = -1;
+        this.postDom = -1;
+        /** @type {?Node} */
+        this.parent = null;
+
+        /** @type {?Node} */
+        this.dom = null;
+        /** @type {?Node} */
+        this.ancestor = null;
+        /** @type {?Node[]} */
+        this.bucket = [];
+        /** @type {?Node} */
+        this.label = this;
+        /** @type {?Node|DominatorBlock} */
+        this.semi = this;
+        /** @type {?Node} */
+        this.idomParent = null;
+        /** @type {Node[]} */
+        this.idomKids = [];
+        /** @type {Node} */
+        this.ltFrontier = [];
+        this.semidom = -1;
+    }
+
     /**
      * @param {BasicBlock} to
      * @return {boolean}
      */
     strictlyDominates( to )
     {
-        return to.preNumber > this.preNumber && to.postNumber < this.postNumber;
+        return to.preDom > this.preDom && to.postDom < this.postDom;
     }
 
     /**
@@ -105,7 +151,7 @@ class DominatorBlock
     }
 
     /**
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     strictDominatorsOf()
     {
@@ -116,7 +162,7 @@ class DominatorBlock
     }
 
     /**
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     dominatorsOf()
     {
@@ -127,7 +173,7 @@ class DominatorBlock
     }
 
     /**
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     blocksStrictlyDominatedBy()
     {
@@ -138,7 +184,7 @@ class DominatorBlock
     }
 
     /**
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     blocksDominatedBy()
     {
@@ -150,7 +196,7 @@ class DominatorBlock
 
     /**
      * @param {function} functor
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     forAllBlocksInDominanceFrontierOf( functor )
     {
@@ -161,7 +207,7 @@ class DominatorBlock
     }
 
     /**
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     dominanceFrontierOf()
     {
@@ -173,7 +219,7 @@ class DominatorBlock
 
     /**
      * @param {function} functor
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     forAllBlocksInIteratedDominanceFrontierOf( functor )
     {
@@ -191,7 +237,7 @@ class DominatorBlock
      * Useful for computing pruned SSA form.
      *
      * @param {function} functor
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     forAllBlocksInPrunedIteratedDominanceFrontierOf( functor )
     {
@@ -203,7 +249,7 @@ class DominatorBlock
     }
 
     /**
-     * @return {Set<BasicBlock>}
+     * @return {Set<BasicBlock|Node>}
      */
     iteratedDominanceFrontierOf()
     {

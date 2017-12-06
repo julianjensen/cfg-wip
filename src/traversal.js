@@ -43,7 +43,6 @@ function DFS( list, cbs = {} )
     function dfs( u )
     {
         u.generation = generation;
-        u.color = 'gray';
         u.pre = preOrder++;
 
         pre( u );
@@ -124,6 +123,7 @@ function BFS( root )
     generation += 2;
 
     const
+        /** @type {Array<Node>} */
         queue = [ root ];
 
     let n,
@@ -135,7 +135,7 @@ function BFS( root )
     {
         n.bpre = preOrder++;
 
-        queue.push( ...n.succs.filter( c => c.generation < generation ).map( c => ( c.generation = generation, c ) ) );
+        queue.push( ...n.succs.map( c => c.get( generation ) ).filter( c => !!c ) );
     }
 }
 

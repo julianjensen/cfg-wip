@@ -6,12 +6,10 @@
  *******************************************************************************************************/
 'use strict';
 
-const
-    isFn      = a => typeof a === 'function',
-    caller    = cbs => name => nodes => isFn( cbs[ name ] ) && cbs[ name ]( nodes ),
-    traversal = require( '../traversal' ),
-    { DFS }   = traversal,
-    assert    = require( 'assert' );
+const isFn                                           = a => typeof a === 'function',
+      caller                                         = cbs => name => nodes => isFn( cbs[ name ] ) && cbs[ name ]( nodes ),
+      traversal                                      = require( '../traversal' ), { DFS } = traversal,
+      assert                                         = require( 'assert' );
 
 /**
  * This implements Lengauer and Tarjan's "A Fast Algorithm for Finding Dominators in a Flowgraph"
@@ -29,83 +27,87 @@ const
  * check trick that was first discovered by Paul F. Dietz in 1982 in "Maintaining order in a linked
  * list" (see http://dl.acm.org/citation.cfm?id=802184).
  *
- * @param {BasicBlockList} graph
+ * @param {BasicBlockList|NodeList} graph
  * @param {number} nextBlockNum
  */
 function DominatorTreeBuilder( graph, nextBlockNum )
 {
-    const
-        /**
-         * @param {BasicBlock} from - Vertex 𝑣
-         * @param {BasicBlock} to   - Vertex 𝑤
-         */
-        link = ( from, to ) => to.ancestor = from,
+    const /**
+           * @param {BasicBlock|Node} from - Vertex 𝑣
+           * @param {BasicBlock|Node} to   - Vertex 𝑤
+           */
+          link = ( from, to ) => to.ancestor = from,
 
-        /**
-         * @param {BasicBlock} v
-         */
-        compress = v => {
-            if ( !v.ancestor || !v.ancestor.ancestor ) return;
+          /**
+           * @param {BasicBlock|Node} v
+           */
+          compress = v => {
+              if ( !v.ancestor || !v.ancestor.ancestor ) return;
 
-            compress( v.ancestor );
+              compress( v.ancestor );
 
-            if ( v.ancestor.label.semi < v.label.semi )
-                v.label = v.ancestor.label;
+              if ( v.ancestor.label.semi.preNumber < v.label.semi.preNumber ) v.label = v.ancestor.label;
 
-            v.ancestor = v.ancestor.ancestor;
-        },
-        /**
-         * If 𝑣 is the root of a tree in the forest, return 𝑣. Otherwise, let 𝑟 be the root
-         * of the tree in the forest which contains 𝑣. Return any vertex 𝑢 ≠ 𝑟 of minimum 𝑠𝑒𝑚𝑖❲𝑢❳
-         * on the path 𝑟 ⥅ 𝑣.
-         *
-         * @param {BasicBlock} v
-         * @return {*}
-         */
-        _eval    = v => {
-            if ( !v.ancestor ) return v;
+              v.ancestor = v.ancestor.ancestor;
+          },
+          /**
+           * If 𝑣 is the root of a tree in the forest, return 𝑣. Otherwise, let 𝑟 be the root
+           * of the tree in the forest which contains 𝑣. Return any vertex 𝑢 ≠ 𝑟 of minimum 𝑠𝑒𝑚𝑖❲𝑢❳
+           * on the path 𝑟 ⥅ 𝑣.
+           *
+           * @param {BasicBlock|Node} v
+           * @return {*}
+           */
+          _eval    = v => {
+              if ( !v.ancestor ) return v;
 
-            compress( v );
-            return v.label;
-        };
+              compress( v );
+              return v.label;
+          };
 
-    graph.forEach( n => n.resetLT() );
+    // graph.forEach( n => n.resetLT() );
 
     // Step 1. Compute depth first pre-numbering.
     // Already done as part of the blockList initial_walk()
 
     // Steps 2 and 3. Compute semi dominators and implicit immediate dominators.
     let currentPreNumber = nextBlockNum;
+    console.log( '---------------------------------------- START LT @' + currentPreNumber );
+    graph.forEach( block => console.log( block.toString() ) );
+    console.log( `by preN - 1: ${graph.getPreN( currentPreNumber - 1 )}` );
 
+    console.log( '---------------------------------------- START 2 & 3, LT @' + currentPreNumber );
     while ( currentPreNumber-- > 1 )
     {
-        let block = graph.get( currentPreNumber );
+        let block = graph.getPreN( currentPreNumber );
 
-        console.log( `currentPreNumber: ${currentPreNumber}, block: ${block}` );
+        console.log( `current block => currentPreNumber: ${currentPreNumber + 1}, block: ${block}\n` );
         // Step 2:
-        block.preds.forEach( p => block.semi = Math.min( _eval( p ).semi, block.semi ) );
 
-        let bucketPreNumber = block.semi;
+        block.preds.forEach( p => {
+            const er = _eval( p );
+            console.log( `eval semi: ${er.semi.preNumber + 1}, block.semi: ${block.semi.preNumber + 1}, eval: ${er}` );
+            block.semi = graph.getPreN( Math.min( er.semi.preNumber, block.semi.preNumber ) );
+        } );
 
-        console.log( `block ${block.name}, semi: ${block.semi + 1}` );
+        let bucketPreNumber = block.semi.preNumber;
+
+        console.log( `${currentPreNumber + 1}: block ${block.name}, semi: ${block.semi.preNumber + 1}, bucketPreNumber: ${bucketPreNumber}` );
 
         assert( bucketPreNumber <= currentPreNumber );
 
-        graph.get( bucketPreNumber ).bucket.push( block );
+        graph.getPreN( bucketPreNumber ).bucket.push( block );
         link( block.parent, block );
 
         // Step 3:
         for ( const semiDominee of block.parent.bucket )
         {
-            const
-                possibleDominator = _eval( semiDominee );
+            const possibleDominator = _eval( semiDominee );
 
-            assert( graph.get( semiDominee.semi ) === block.parent );
+            assert( graph.getPreN( semiDominee.semi.preNumber ) === block.parent );
 
-            if ( possibleDominator.semi < semiDominee.semi )
-                semiDominee.dom = possibleDominator;
-            else
-                semiDominee.dom = block.parent;
+            if ( possibleDominator.semi.preNumber < semiDominee.semi.preNumber ) semiDominee.dom = possibleDominator;
+            else semiDominee.dom = block.parent;
         }
 
         block.parent.bucket.length = 0;
@@ -117,30 +119,27 @@ function DominatorTreeBuilder( graph, nextBlockNum )
 
     while ( currentPreNumber-- > 1 )
     {
-        let block = graph.get( currentPreNumber );
+        let block = graph.getPreN( currentPreNumber );
 
         // Step 2:
-        block.preds.forEach( p => block.semi = Math.min( _eval( p ).semi, block.semi ) );
+        block.preds.forEach( p => block.semi = graph.getPreN( Math.min( _eval( p ).semi.preNumber, block.semi.preNumber ) ) );
 
-        let bucketPreNumber = block.semi;
+        let bucketPreNumber = block.semi.preNumber;
 
         assert( bucketPreNumber <= currentPreNumber );
 
-        graph.get( bucketPreNumber ).bucket.push( block );
+        graph.getPreN( bucketPreNumber ).bucket.push( block );
         link( block.parent, block );
 
         // Step 3:
         for ( const semiDominee of block.parent.bucket )
         {
-            const
-                possibleDominator = _eval( semiDominee );
+            const possibleDominator = _eval( semiDominee );
 
-            assert( graph.get( semiDominee.semi ) === block.parent );
+            assert( graph.getPreN( semiDominee.semi.preNumber ) === block.parent );
 
-            if ( possibleDominator.semi < semiDominee.semi )
-                semiDominee.dom = possibleDominator;
-            else
-                semiDominee.dom = block.parent;
+            if ( possibleDominator.semi.preNumber < semiDominee.semi.preNumber ) semiDominee.dom = possibleDominator;
+            else semiDominee.dom = block.parent;
         }
 
         block.parent.bucket.length = 0;
@@ -150,10 +149,9 @@ function DominatorTreeBuilder( graph, nextBlockNum )
 
     for ( let currentPreNumber = 1; currentPreNumber < nextBlockNum; ++currentPreNumber )
     {
-        const w = graph.get( currentPreNumber );
+        const w = graph.getPreN( currentPreNumber );
 
-        if ( w.dom !== graph.get( w.semi ) )
-            w.dom = w.dom.dom;
+        if ( w.dom !== graph.getPreN( w.semi.preNumber ) ) w.dom = w.dom.dom;
     }
 }
 
@@ -162,9 +160,8 @@ function DominatorTreeBuilder( graph, nextBlockNum )
  */
 function llvm( nodes )
 {
-    const
-        root  = nodes[ 0 ],
-        idoms = [ root ];
+    const root  = nodes[ 0 ],
+          idoms = [ root ];
 
     let gen;
 
@@ -184,8 +181,7 @@ function llvm( nodes )
 
                 node.preds.forEach( p => {
                     if ( !idoms[ p.pre ] ) return;
-                    if ( !idom )
-                        idom = p;
+                    if ( !idom ) idom = p;
                     else
                     {
                         let b1 = idom,
@@ -193,10 +189,8 @@ function llvm( nodes )
 
                         while ( b1.post !== b2.post )
                         {
-                            while ( b1.post < b2.post )
-                                b1 = idoms[ b1.pre ];
-                            while ( b2.post < b1.post )
-                                b2 = idoms[ b2.pre ];
+                            while ( b1.post < b2.post ) b1 = idoms[ b1.pre ];
+                            while ( b2.post < b1.post ) b2 = idoms[ b2.pre ];
                         }
                         idom = b1;
                     }
@@ -205,16 +199,15 @@ function llvm( nodes )
                 if ( idoms[ node.pre ] !== idom )
                 {
                     idoms[ node.pre ] = idom;
-                    changed = true;
+                    changed           = true;
                 }
-
 
             }
         } );
     }
 
     nodes.forEach( n => {
-        n.chkDom = idoms[ n.pre ];
+        n.chkDom   = idoms[ n.pre ];
         n.domSuccs = [];
     } );
     nodes.filter( n => n.chkDom ).forEach( n => n.chkDom.domSuccs.push( n ) );
@@ -228,11 +221,10 @@ function llvm( nodes )
  */
 function FindDoms( nodes, cbs = {} )
 {
-    const
-        invoke  = caller( cbs ),
-        initial = invoke( 'initial' ),
-        iter    = invoke( 'iter' ),
-        idoms   = [];
+    const invoke  = caller( cbs ),
+          initial = invoke( 'initial' ),
+          iter    = invoke( 'iter' ),
+          idoms   = [];
 
     let changed = true;
 
@@ -256,8 +248,7 @@ function FindDoms( nodes, cbs = {} )
 
         b.preds.forEach( p => {
             if ( !idoms[ p.pre ] ) return;
-            if ( !idom )
-                idom = p;
+            if ( !idom ) idom = p;
             else
             {
                 let finger1 = p,
@@ -265,10 +256,8 @@ function FindDoms( nodes, cbs = {} )
 
                 while ( finger1.post !== finger2.post )
                 {
-                    while ( finger1.post < finger2.post )
-                        finger1 = idoms[ finger1.pre ];
-                    while ( finger2.post < finger1.post )
-                        finger2 = idoms[ finger2.pre ];
+                    while ( finger1.post < finger2.post ) finger1 = idoms[ finger1.pre ];
+                    while ( finger2.post < finger1.post ) finger2 = idoms[ finger2.pre ];
                 }
 
                 idom = finger1;
@@ -278,7 +267,7 @@ function FindDoms( nodes, cbs = {} )
         if ( idoms[ b.pre ] !== idom )
         {
             idoms[ b.pre ] = idom;
-            changed = true;
+            changed        = true;
         }
     }
 
@@ -291,44 +280,41 @@ function FindDoms( nodes, cbs = {} )
 
     /**
      * Find dominance frontiers
-     *
-     * @param {Node} b
      */
-    function find_frontier( b )
-    {
-        // b.frontier.add( b );
-        if ( b.preds.length < 2 ) return;
-
-        // if ( b.preds.length === 1 )
-        // {
-        //     b.preds[ 0 ].frontier.add( b );
-        //     return;
-        // }
-
-        b.preds.forEach( runner => {
-
-            while ( runner !== idoms[ b.pre ] )
-            {
-                runner.frontier.add( b );
-                runner = idoms[ runner.pre ];
-            }
-        } );
-    }
-
-    nodes.forEach( find_frontier );
-
-    idoms.forEach( ( n, i ) => nodes.find( f => f.pre === i ).chkDom = n );
-
     nodes
-        .map( n => {
-            n.domSuccs = [];
-            return n;
-        } )
-        .filter( n => n.chkDom && n.chkDom !== n )
-        .forEach( n => n.chkDom.domSuccs.push( n ) );
+        .filter( b => b.preds.length > 1 )
+        .forEach( b => {
+            b.preds.forEach( runner => {
+
+                while ( runner !== idoms[ b.pre ] )
+                {
+                    runner.frontier.add( b );
+                    runner = idoms[ runner.pre ];
+                }
+            } );
+        } );
+
+    idoms.forEach( ( n, i ) => {
+        const block = nodes.find( f => f.pre === i );
+        block.chkDom = n;
+        if ( n )
+            n.domSuccs.push( block );
+    } );
+
+    // nodes
+    //     .map( n => {
+    //         n.domSuccs = [];
+    //         return n;
+    //     } )
+    //     .filter( n => n.chkDom && n.chkDom !== n )
+    //     .forEach( n => n.chkDom.domSuccs.push( n ) );
 
     // traversal.generation = gen;
     // DFS( nodes, { rpost: find_frontier } );
 }
 
-module.exports = { DominatorTreeBuilder, FindDoms, llvm };
+module.exports = {
+    DominatorTreeBuilder,
+    FindDoms,
+    llvm
+};

@@ -30,6 +30,7 @@
 
 const
     fs = require( 'fs' ),
+    LTDominators = require( './lt' ),
     DominatorBlock                           = require( './dominator-block' ),
     traversal                                = require( '../traversal' ),
     { DFS, BFS, PrePost, generic }                = traversal,
@@ -133,10 +134,16 @@ class Node extends DominatorBlock
         super();
         this.name = 'NODE ' + n;
         this.id = n - 1;
-        this.pre = -1;
-        this.post = -1;
-        this.rpost = -1;
-        this.bpre = -1;
+        this.reset();
+    }
+
+    reset()
+    {
+        this.resetLT();
+        this.pre      = -1;
+        this.post     = -1;
+        this.rpost    = -1;
+        this.bpre     = -1;
         this._isStart = false;
         // this.color = 'white';
         /** @type {Node[]} */
@@ -147,34 +154,10 @@ class Node extends DominatorBlock
         this.chkDom = null;
         /** @type {Set<Node>} */
         this.frontier = new Set();
+        /** @type {number} */
         this.generation = -1;
         /** @type {Node[]} */
         this.domSuccs = [];
-
-        // LT Dominators
-        this.resetLT();
-        this.preNumber = -1;
-        this.postNumber = -1;
-        /** @type {?Node} */
-        this.parent = null;
-    }
-
-    /** */
-    resetLT()
-    {
-        /** @type {?Node} */
-        this.dom = null;
-        /** @type {?Node} */
-        this.ancestor = null;
-        /** @type {?Node[]} */
-        this.bucket = [];
-        /** @type {?Node} */
-        this.label = this;
-        this.semi = this.preNumber;
-        /** @type {?Node} */
-        this.idomParent = null;
-        /** @type {Node[]} */
-        this.idomKids = [];
     }
 
     /**
@@ -191,6 +174,18 @@ class Node extends DominatorBlock
     set isStart( v )
     {
         this._isStart = v;
+    }
+
+    /**
+     * @param {number} gen
+     * @returns {?Node}
+     */
+    get( gen )
+    {
+        if ( this.generation >= gen ) return null;
+
+        this.generation = gen;
+        return this;
     }
 
     /**
@@ -238,24 +233,46 @@ class Node extends DominatorBlock
         yield* this.succs;
     }
 
+    idomN()
+    {
+        return this.idomParent ? this.idomParent.pre : void 0;
+    }
+
+    domTreeNodes()
+    {
+        // if ( !this.dom ) return '';
+        //
+        // if ( !this.idomKids || !this.idomKids.length ) return `${this.dom.pre + 1} -> ∅`;
+
+        if ( !this.idomKids || !this.idomKids.length ) return `${this.pre +1} -> ∅`;
+
+        return `${this.pre + 1} -> ${this.idomKids.map( c => c.pre + 1 ).join( ' ' )}`;
+    }
+
+    chkDomTreeNodes()
+    {
+        if ( !this.domSuccs.length ) return `    ${this.pre + 1} -> ∅`;
+
+        return `${this.chkDom && this.chkDom !== this ? ( this.chkDom.pre + 1 ) + ' ^ ' : '    '}${this.pre + 1} -> ${this.domSuccs.map( c => c.pre + 1 ).join( ' ' )}`;
+    }
+
     /**
      * @return {string}
      */
     toString()
     {
         const
-            wkNums   = `preNumber: ${this.preNumber + 1}, postNumber: ${this.postNumber + 1}`,
+            wkNums   = `${this.chkDomTreeNodes()}`,
             fronts   = [ ...this.frontier ].map( n => n.pre + 1 ).join( ', ' ),
             ltFronts = ( this.ltFrontier || [] ).map( n => n.pre + 1 ).join( ', ' ),
             preds    = this.preds.length ? this.preds.map( n => n.pre + 1 ).join( ' ' ) : ' ',
             succs    = this.succs.length ? this.succs.map( n => n.pre + 1 ).join( ' ' ) : ' ',
             pre      = this.pre + 1,
             post     = this.post + 1,
-            rpost    = this.rpost + 1;
+            rpost    = this.rpost + 1,
+            domBy = this.domTreeNodes(); // idomN() + 1;
 
-        return `${this.name} (${preds} < > ${succs}) => pre: ${pre}, post: ${post}, rpost: ${rpost}, webkit => ${wkNums}, frontier: ${fronts}, lt fronts: ${ltFronts}, dom. by: ${this.idomParent
-            ? this.idomParent.name
-            : ' '}`;
+        return `${this.name} (${preds} < > ${succs}) => pre: ${pre}, post: ${post}, rpost: ${rpost}, domTree => ${wkNums}, frontier: ${fronts}, lt fronts: ${ltFronts}, dom. by: ${domBy}`;
     }
 
     /**
@@ -264,15 +281,17 @@ class Node extends DominatorBlock
     toTable()
     {
         const
+            wkNums = `${this.chkDomTreeNodes()}`,
             fronts   = [ ...this.frontier ].map( n => n.id + 1 ).join( ' ' ),
             ltFronts = ( this.ltFrontier || [] ).map( n => n.id + 1 ).join( ' ' ),
             preds    = this.preds.length ? this.preds.map( n => n.id + 1 ).join( ' ' ) : ' ',
             succs    = this.succs.length ? this.succs.map( n => n.id + 1 ).join( ' ' ) : ' ',
             pre      = this.pre + 1,
             post     = this.post + 1,
-            rpost    = this.rpost + 1;
+            rpost    = this.rpost + 1,
+            domBy = this.domTreeNodes(); // idomN() + 1;
 
-        return [ this.name, succs, preds, pre, post, rpost, this.preNumber + 1, this.postNumber + 1, this.chkDom ? this.chkDom.name : ' ', fronts, ltFronts, this.idomParent ? this.idomParent.name : ' ' ];
+        return [ this.name, succs, preds, pre, post, rpost, this.preNumber + 1, this.postNumber + 1, wkNums, fronts, ltFronts, domBy ];
         //  [ ...this.strictDominatorsOf() ].map( b => b.pre + 1 ) ];
     }
 
@@ -286,7 +305,7 @@ class Node extends DominatorBlock
 class NodeList
 {
     /**
-     * @param {Node[]} nodeList
+     * @param {Array<Array<Node>>} nodeList
      */
     constructor( nodeList )
     {
@@ -307,6 +326,7 @@ class NodeList
 
         this.startNode = this.nodes[ 0 ];
         this.startNode.isStart = true;
+        this.exitNode = null;
 
         const end = this.nodes.find( n => !n.succs.length );
         if ( end ) this.endNode = end;
@@ -322,6 +342,7 @@ class NodeList
 
         BFS( this.startNode );
 
+        this.nodes.forEach( n => n.post_init() );
         /**
          * @param {Node[]} nodes
          */
@@ -332,9 +353,14 @@ class NodeList
             }, [] ) );
         };
 
+        this.lt = new LTDominators( this, false );
+        console.log( 'lt doms:\n    ', this.lt.idoms.map( ( id, pn ) => `${pn + 1} -> ${id + 1}` ).join( '\n    ' ) );
         FindDoms( this.nodes, { initial: stash_doms, iter: stash_doms } );
-        this.maxPreNumLt = PrePost( this.startNode );
-        // this.lentar_dominators();
+        this.nodes.forEach( n => n.domSuccs.includes( n ) && n.domSuccs.splice( n.domSuccs.indexOf( n ), 1 ) );
+        // this.maxPreNumLt = PrePost( this.startNode );
+        this.byPreNumber = [];
+        // this.nodes.forEach( n => this.byPreNumber[ n.preNumber = n.pre ] = n );
+        this.lentar_dominators();
         this.nodes.forEach( n => n.ltFrontier = [ ...n.dominatorsOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
         // this.nodes.forEach( n => n.ltFrontier = [ ...n.dominanceFrontierOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
 
@@ -380,6 +406,17 @@ class NodeList
         return this.nodes[ index ];
     }
 
+    getPre( index )
+    {
+        return this.preOrder[ index ];
+    }
+
+    getPreN( index )
+    {
+        return this.preOrder[ index ];
+        // return this.byPreNumber[ index ];
+    }
+
     /**
      * @return {string}
      */
@@ -412,15 +449,15 @@ class NodeList
 
         // r += str_table( 'Nodes added order', headers, this.nodes.map( n => n.toTable() ) ) + '\n';
         r += str_table( 'Nodes pre order', headers, this.preOrder.map( n => n.toTable() ) ) + '\n';
-        r += str_table( 'Nodes post order', headers, this.postOrder.map( n => n.toTable() ) ) + '\n';
-        r += str_table( 'Nodes reverse post order', headers, this.rPostOrder.map( n => n.toTable() ) ) + '\n';
+        // r += str_table( 'Nodes post order', headers, this.postOrder.map( n => n.toTable() ) ) + '\n';
+        // r += str_table( 'Nodes reverse post order', headers, this.rPostOrder.map( n => n.toTable() ) ) + '\n';
 
-        const
-            nodesPost = this.nodes.slice().sort( ( a, b ) => b.post - a.post ),
-            chk       = start_table( [ '', ...this.results.map( ( r, i ) => !i ? 'Inital' : 'Iter #' + i ) ] );
-
-        chk.push( ...nodesPost.map( node => [ 'Node #' + ( node.post + 1 ), ...this.results.map( ra => typeof ra[ node.post ] === 'number' ? ra[ node.post ] + 1 : 'u' ) ] ) );
-        r += chk.toString();
+        // const
+        //     nodesPost = this.nodes.slice().sort( ( a, b ) => b.post - a.post ),
+        //     chk       = start_table( [ '', ...this.results.map( ( r, i ) => !i ? 'Inital' : 'Iter #' + i ) ] );
+        //
+        // chk.push( ...nodesPost.map( node => [ 'Node #' + ( node.post + 1 ), ...this.results.map( ra => typeof ra[ node.post ] === 'number' ? ra[ node.post ] + 1 : 'u' ) ] ) );
+        // r += chk.toString();
 
         return r;
     }
@@ -430,7 +467,7 @@ class NodeList
      */
     lentar_dominators()
     {
-        DominatorTreeBuilder( this, this.maxPreNumLt );
+        DominatorTreeBuilder( this, Math.max( ...this.nodes.map( n => n.pre ) ) );
 
         // From here we want to build a spanning tree with both upward and downward links and we want
         // to do a search over this tree to compute pre and post numbers that can be used for dominance
@@ -453,7 +490,7 @@ class NodeList
 
                 // Plain stack-based worklist because we are guaranteed to see each block exactly once anyway.
 
-                const worklist = [ { node: this.nodes[ 0 ], order: 1 } ];
+                const worklist = [ { node: this.startNode, order: 1 } ];
 
                 while ( worklist.length )
                 {
@@ -462,7 +499,7 @@ class NodeList
                     switch ( order )
                     {
                         case 1:
-                            node.preNumber = nextPreNumber++;
+                            node.preDom = nextPreNumber++;
                             node.generation = traversal.generation;
 
                             worklist.push( { node, order: -1 } );
@@ -475,7 +512,7 @@ class NodeList
                             break;
 
                         case -1:
-                            node.postNumber = nextPostNumber++;
+                            node.postDom = nextPostNumber++;
                             break;
                     }
                 }
@@ -530,6 +567,8 @@ digraph "${title}" {
 }
 
 const one = new NodeList( active );
+
+
 log( `${one}` );
 // const xlat = n => n.isStart ? 'START' : !n.succs.length ? 'END' : toAsc( n.pre );
 
