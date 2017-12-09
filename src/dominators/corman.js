@@ -31,10 +31,10 @@
 const
     fs = require( 'fs' ),
     LTDominators = require( './lt' ),
-    DominatorBlock                           = require( './dominator-block' ),
+    { DominatorTree, DominatorBlock }                          = require( './dominator-chk-block' ),
     traversal                                = require( '../traversal' ),
     { DFS, BFS, PrePost, generic }                = traversal,
-    { DominatorTreeBuilder, FindDoms, llvm } = require( './dominator-tree-builder' ),
+    { DominatorTreeBuilder, FindDoms } = require( './dominator-tree-builder' ),
     { start_table, str_table, log }          = require( '../dump' ),
 
     r                                        = 1,
@@ -124,14 +124,14 @@ const
     toAsc                                    = i => !i ? 'START' : i === 8 ? 'END' : n2a[ i ];
 
 /** */
-class Node extends DominatorBlock
+class Node // extends DominatorBlock
 {
     /**
      * @param {number} n
      */
     constructor( n )
     {
-        super();
+        // super();
         this.name = 'NODE ' + n;
         this.id = n - 1;
         this.reset();
@@ -139,7 +139,7 @@ class Node extends DominatorBlock
 
     reset()
     {
-        this.resetLT();
+        // this.resetLT();
         this.pre      = -1;
         this.post     = -1;
         this.rpost    = -1;
@@ -197,29 +197,57 @@ class Node extends DominatorBlock
         return this;
     }
 
+    __add_edges( xe, ne, fn )
+    {
+        const fe = ne.filter( en => !!en && !xe.includes( en ) );
+
+        fe.forEach( fn );
+
+        return xe.concat( fe );
+    }
+
     /**
-     * @param {Node[]} succs
+     * @param {...Node} succs
      * @return {Node}
      */
     add_succs( ...succs )
     {
-        console.log( `${this.name}(${this.id}) => ${succs.map( n => `${n.name}(${n.id})` ).join( ' ' )}` );
-        this.succs = succs; // .sort( ( a, b ) => a.id - b.id );
+        succs.forEach( s => {
+            this.add_succ( s );
+            s.add_pred( this );
+        } );
+        // this.succs = this.__add_edges( this.succs, succs, n => n.add_pred( n ) );
         return this;
     }
 
+    add_succ( s )
+    {
+        if ( s && !this.succs.includes( s ) ) this.succs.push( s );
+    }
+
+    add_pred( p )
+    {
+        if ( !p ) return;
+
+        if ( !this.parent ) this.parent = p;
+
+        if ( !this.preds.includes( p ) ) this.preds.push( p );
+    }
+
     /**
-     * @param {Node[]} _preds
+     * @param {...Node} _preds
      * @return {Node}
      */
     add_preds( ..._preds )
     {
-        const preds = _preds.filter( x => !!x );
-
-        if ( !this.preds.length && preds.length )
-            this.parent = preds[ 0 ];
-
-        this.preds = [ ...new Set( this.preds.concat( preds ) ) ];
+        _preds.forEach( p => {
+            this.add_pred( p );
+            p.add_succ( this );
+        } );
+        // if ( !this.preds.length && _preds.length )
+        //     this.parent = _preds[ 0 ];
+        //
+        // this.preds = this.__add_edges( this.preds, _preds, n => n.add_succ( n ) );
         return this;
     }
 
@@ -233,21 +261,21 @@ class Node extends DominatorBlock
         yield* this.succs;
     }
 
-    idomN()
-    {
-        return this.idomParent ? this.idomParent.pre : void 0;
-    }
-
-    domTreeNodes()
-    {
-        // if ( !this.dom ) return '';
-        //
-        // if ( !this.idomKids || !this.idomKids.length ) return `${this.dom.pre + 1} -> ∅`;
-
-        if ( !this.idomKids || !this.idomKids.length ) return `${this.pre +1} -> ∅`;
-
-        return `${this.pre + 1} -> ${this.idomKids.map( c => c.pre + 1 ).join( ' ' )}`;
-    }
+    // idomN()
+    // {
+    //     return this.idomParent ? this.idomParent.pre : void 0;
+    // }
+    //
+    // domTreeNodes()
+    // {
+    //     // if ( !this.dom ) return '';
+    //     //
+    //     // if ( !this.idomKids || !this.idomKids.length ) return `${this.dom.pre + 1} -> ∅`;
+    //
+    //     if ( !this.idomKids || !this.idomKids.length ) return `${this.pre +1} -> ∅`;
+    //
+    //     return `${this.pre + 1} -> ${this.idomKids.map( c => c.pre + 1 ).join( ' ' )}`;
+    // }
 
     chkDomTreeNodes()
     {
@@ -264,7 +292,7 @@ class Node extends DominatorBlock
         const
             wkNums   = `${this.chkDomTreeNodes()}`,
             fronts   = [ ...this.frontier ].map( n => n.pre + 1 ).join( ', ' ),
-            ltFronts = ( this.ltFrontier || [] ).map( n => n.pre + 1 ).join( ', ' ),
+            ltFronts = '', // ( this.ltFrontier || [] ).map( n => n.pre + 1 ).join( ', ' ),
             preds    = this.preds.length ? this.preds.map( n => n.pre + 1 ).join( ' ' ) : ' ',
             succs    = this.succs.length ? this.succs.map( n => n.pre + 1 ).join( ' ' ) : ' ',
             pre      = this.pre + 1,
@@ -283,13 +311,13 @@ class Node extends DominatorBlock
         const
             wkNums = `${this.chkDomTreeNodes()}`,
             fronts   = [ ...this.frontier ].map( n => n.id + 1 ).join( ' ' ),
-            ltFronts = ( this.ltFrontier || [] ).map( n => n.id + 1 ).join( ' ' ),
+            ltFronts = '', // ( this.ltFrontier || [] ).map( n => n.id + 1 ).join( ' ' ),
             preds    = this.preds.length ? this.preds.map( n => n.id + 1 ).join( ' ' ) : ' ',
             succs    = this.succs.length ? this.succs.map( n => n.id + 1 ).join( ' ' ) : ' ',
             pre      = this.pre + 1,
             post     = this.post + 1,
             rpost    = this.rpost + 1,
-            domBy = this.domTreeNodes(); // idomN() + 1;
+            domBy = ''; // this.domTreeNodes(); // idomN() + 1;
 
         return [ this.name, succs, preds, pre, post, rpost, this.preNumber + 1, this.postNumber + 1, wkNums, fronts, ltFronts, domBy ];
         //  [ ...this.strictDominatorsOf() ].map( b => b.pre + 1 ) ];
@@ -301,23 +329,44 @@ class Node extends DominatorBlock
     }
 }
 
-/** */
+/**
+ * @template T
+ */
 class NodeList
 {
     /**
-     * @param {Array<Array<Node>>} nodeList
+     * @param {Array<Array<number>>} nodeList
      */
     constructor( nodeList )
     {
         /** @type {Node[]} */
-        this.nodes = [];
+        this.nodes = nodeList.map( ( n, i ) => new Node( i + 1 ) ).sort( ( a, b ) => a.id - b.id );
 
         nodeList
-            .forEach( lst => lst.forEach( n => this.nodes[ n - 1 ] || ( this.nodes[ n - 1 ] = new Node( n ) ) ) );
+            .forEach( lst => this.nodes[ lst[ 0 ] - 1 ].add_succs( ...lst.slice( 1 ).map( si => this.nodes[ si - 1 ] ) ) );
 
-        nodeList
-            // .map( n => this.nodes[ this.nodes.length ] = new Node( n[ 0 ] ) )
-            .forEach( ( n, i ) => this.nodes[ n[ 0 ] - 1 ].add_succs( ...nodeList[ i ].slice( 1 ).map( sn => this.nodes[ sn - 1 ] ) ) );
+        // nodeList
+        //     .forEach( lst => lst.forEach( n => this.nodes[ n - 1 ] || ( this.nodes[ n - 1 ] = new Node( n ) ) ) );
+        //
+        // nodeList
+        //     // .map( n => this.nodes[ this.nodes.length ] = new Node( n[ 0 ] ) )
+        //     .forEach( ( n, i ) => this.nodes[ n[ 0 ] - 1 ].add_succs( ...nodeList[ i ].slice( 1 ).map( sn => this.nodes[ sn - 1 ] ) ) );
+
+        const
+            { ms, mp } = this.nodes.reduce( ( { ms, mp }, n ) => ( { ms: Math.max( ms, n.succs.length ), mp: Math.max( mp, n.preds.length ) } ), { ms: 0, mp: 0 } );
+
+        console.log(
+        this.nodes.map( n => {
+            let preds = n.preds.map( p => p.id + 1 ).sort(),
+                succs = n.succs.map( s => s.id + 1 ).sort(),
+                start = !preds.length ? ' <- START' : '',
+                end = !succs.length ? ' <- END' : '';
+
+            preds = preds.join( ' ' ).padEnd( mp * 2 - 1 ) + ( preds.length ? ' < ' : '   ' );
+            succs = ( succs.length ? ' > ' : '   ' ) + succs.join( ' ' ).padStart( ms * 2 - 1 );
+
+            return `${preds} ${n.id + 1} ${succs}${start}${end}`;
+        } ) );
 
         this.preOrder = [];
         this.postOrder = [];
@@ -342,26 +391,68 @@ class NodeList
 
         BFS( this.startNode );
 
-        this.nodes.forEach( n => n.post_init() );
+        // this.nodes.forEach( n => n.post_init() );
         /**
          * @param {Node[]} nodes
          */
-        const stash_doms = nodes => {
-            this.results.push( nodes.reduce( ( rdom, n ) => {
-                rdom[ n.post ] = n.chkDom ? n.chkDom.post : 'u';
-                return rdom;
-            }, [] ) );
-        };
+        // const stash_doms = nodes => {
+        //     this.results.push( nodes.reduce( ( rdom, n ) => {
+        //         rdom[ n.post ] = n.chkDom ? n.chkDom.post : 'u';
+        //         return rdom;
+        //     }, [] ) );
+        // };
+
+        function dom2txt( allDoms, dn )
+        {
+            const
+                doms = [],
+                idComma = arr => arr.map( d => d.id + 1 ).join( ', ' );
+                // preComma = arr => arr.map( d => d.id + 1 ).join( ', ' );
+
+            let r = dn;
+            while ( r )
+            {
+                doms.push( r.id + 1 );
+                r = allDoms[ r.pre ].idom;
+            }
+
+            // if ( !dn.domSuccs )
+            // {
+            //     console.error( `no succs:`, dn );
+            //     process.exit( 1 );
+            // }
+            //
+            // if ( !dn.frontier )
+            // {
+            //     console.error( `no frontier:`, dn );
+            //     process.exit( 1 );
+            // }
+
+            return `${dn.id + 1} -> ${idComma( dn.domSuccs )}, doms: ${doms.join( ', ' )}, frontier: ${idComma( dn.frontier || [] )}`;
+        }
 
         this.lt = new LTDominators( this, false );
-        console.log( 'lt doms:\n    ', this.lt.idoms.map( ( id, pn ) => `${pn + 1} -> ${id + 1}` ).join( '\n    ' ) );
-        FindDoms( this.nodes, { initial: stash_doms, iter: stash_doms } );
+        this.ltDoms = this.lt.generate();
+        console.log( 'ltDoms:', this.ltDoms );
+
+        const _pdoms = ad => dn => dom2txt( ad, dn );
+        let pdoms;
+        console.log( 'lt doms:\n    ', this.lt.generate().map( n => `${n.id + 1} -> ${n.domSuccs.map( d => d.id + 1 ).join( ', ' )}` ).join( '\n    ' ) );
+        this.chk = FindDoms( this, {} ); //, { initial: stash_doms, iter: stash_doms } );
+        pdoms = _pdoms( this.chk );
         this.nodes.forEach( n => n.domSuccs.includes( n ) && n.domSuccs.splice( n.domSuccs.indexOf( n ), 1 ) );
+        console.log( 'chk doms:\n    ', this.chk.map( pdoms ).join( '\n    ' ) );
+        // console.log( 'chk doms:\n    ', this.chk.map( n => `${n.id + 1} -> ${n.domSuccs.map( d => d.id + 1 ).join( ', ' )}` ).join( '\n    ' ) );
+
+        // this.llvm = llvm( this );
+        // pdoms = _pdoms( this.llvm );
+        // console.log( 'llvm doms:\n    ', this.llvm.map( pdoms ).join( '\n    ' ) );
+
         // this.maxPreNumLt = PrePost( this.startNode );
         this.byPreNumber = [];
         // this.nodes.forEach( n => this.byPreNumber[ n.preNumber = n.pre ] = n );
-        this.lentar_dominators();
-        this.nodes.forEach( n => n.ltFrontier = [ ...n.dominatorsOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
+        // this.lentar_dominators();
+        // this.nodes.forEach( n => n.ltFrontier = [ ...n.dominatorsOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
         // this.nodes.forEach( n => n.ltFrontier = [ ...n.dominanceFrontierOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
 
         // const
@@ -380,8 +471,13 @@ class NodeList
         // llvm( this.nodes );
     }
 
+    * [Symbol.iterator]()
+    {
+        yield *this.nodes;
+    }
+
     /**
-     * @param {function} fn
+     * @param {function( T, ?number, ?T[]):*} fn
      */
     forEach( fn )
     {
@@ -389,12 +485,30 @@ class NodeList
     }
 
     /**
-     * @param {function} fn
+     * @param {function( T, number, T[]):*} fn
      * @return {*[]}
      */
     map( fn )
     {
         return this.nodes.map( fn );
+    }
+
+    /**
+     * @param {function( T, number, T[] ):boolean} fn
+     * @return {T[]}
+     */
+    filter( fn )
+    {
+        return this.nodes.filter( fn );
+    }
+
+    /**
+     * @param {function( T, number, T[] ):boolean} fn
+     * @return {T[]}
+     */
+    find( fn )
+    {
+        return this.nodes.filter( fn );
     }
 
     /**

@@ -162,11 +162,8 @@ function DominatorTreeBuilder( graph, nextBlockNum )
  * @typedef {object} DomNode
  * @property {Node} node
  * @property {number} id
- * @property {number} pre
  * @property {?DomNode} idom
  * @property {Array<DomNode>} domSuccs
- * @property {Array<DomNode>} doms
- * @property {Set<DomNode>|Array<DomNode>} frontier
  */
 
 /**
@@ -234,70 +231,45 @@ function FindDoms( nodes, cbs = {} )
         iter( nodes );
     }
 
-    let domTree = [];
-
-    for ( const node of nodes )
-        domTree[ node.pre ] = {
-            node:     node,
-            id:       node.id,
-            pre:      node.pre,
-            idom:     node.isStart ? void 0 : idoms[ node.pre ],
-            domSuccs: [],
-            frontier: new Set(),
-            doms:     []
-        };
-
-    // const frontiers = [];
+    const frontiers = [];
 
     /**
      * Find dominance frontiers
      */
-    // nodes.forEach( b => frontiers[ b.pre ] = new Set() );
+    nodes.forEach( b => frontiers[ b.pre ] = new Set() );
 
-    domTree.forEach( dn => {
-        const
-            b     = dn.node,
-            preds = b.preds;
+    nodes
+        .forEach( b => {
+            if ( b.preds.length < 2 ) return;
 
-        if ( dn.idom )
-            domTree[ dn.idom.pre ].domSuccs.push( dn );
+            b.preds.forEach( runner => {
 
-        if ( preds.length < 2 ) return;
-
-        preds.forEach( runner => {
-            while ( runner !== dn.idom )
-            {
-                const rdt = domTree[ runner.pre ];
-
-                rdt.frontier.add( b );
-                runner = rdt.idom;
-            }
+                while ( runner !== idoms[ b.pre ] )
+                {
+                    frontiers[ runner.pre ].add( b );
+                    runner = idoms[ runner.pre ];
+                }
+            } );
         } );
-    } );
 
-    return domTree.map( dn => {
-        dn.frontier = [ ...dn.frontier ];
-        return dn;
-    } ).sort( ( a, b ) => a.id - b.id );
+    const domTree = nodes
+        .map( ( n, i ) => ( {
+            node:     n,
+            id:       i,
+            pre: n.pre,
+            idom:     n.isStart ? void 0 : idoms[ n.pre ],
+            domSuccs: [],
+            frontier: [ ...frontiers[ n.pre ] ]
+        } ) )
+        .sort( ( a, b ) => a.pre - b.pre );
 
-    // const domTree = nodes
-    //     .map( ( n, i ) => ( {
-    //         node:     n,
-    //         id:       i,
-    //         pre:      n.pre,
-    //         idom:     n.isStart ? void 0 : idoms[ n.pre ],
-    //         domSuccs: [],
-    //         frontier: [ ...frontiers[ n.pre ] ]
-    //     } ) )
-    //     .sort( ( a, b ) => a.pre - b.pre );
-    //
-    // return domTree
-    //     .map( d => {
-    //         if ( !d.idom ) return d;
-    //         d.idom = domTree[ d.idom.pre ];
-    //         d.idom.domSuccs.push( d );
-    //         return d;
-    //     } );
+    return domTree
+        .map( d => {
+            if ( !d.idom ) return d;
+            d.idom = domTree[ d.idom.pre ];
+            d.idom.domSuccs.push( d );
+            return d;
+        } );
 }
 
 module.exports = {

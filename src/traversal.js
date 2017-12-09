@@ -12,7 +12,7 @@ const
 let generation = 0;
 
 /**
- * @param {Array<Node>} list
+ * @param {NodeList} list
  * @param {object} cbs
  * @return {number}
  */
@@ -22,7 +22,6 @@ function DFS( list, cbs = {} )
         callback = ( fn, ...args ) => isFn( fn ) && fn( ...args ),
 
         add_edge = ( from, to, type ) => {
-            // edgeList.classify_edge( from, to, type );
             callback( cbs.edge, from, to, type );
             callback( cbs.edge && cbs.edge[ type ], from, to, type );
         },
@@ -31,7 +30,10 @@ function DFS( list, cbs = {} )
         rpost = list => isFn( cbs.rpost ) && list.forEach( n => cbs.rpost( n ) ),
         process = ( u, v ) => { add_edge( u, v, 'tree' ); dfs( v ); },
 
-        revPostOrder = [];
+        revPostOrder = [],
+        running = new Set(),
+        _v = new Set(),
+        visit = n => _v.has( n ) ? false : !!_v.add( n );
 
     let preOrder  = 0,
         postOrder = 0,
@@ -42,22 +44,22 @@ function DFS( list, cbs = {} )
      */
     function dfs( u )
     {
-        u.generation = generation;
         u.pre = preOrder++;
+        running.add( u );
 
         pre( u );
 
-        for ( const v of u )
+        for ( const v of u.succs )
         {
-            v.add_preds( u );
+            // v.add_preds( u );
 
-            if ( v.generation < generation ) process( u, v );
-            else if ( v.generation === generation ) add_edge( u, v, 'back' );
+            if ( visit( v ) ) process( u, v );
+            else if ( running.has( v ) ) add_edge( u, v, 'back' );
             else if ( u.pre < v.pre ) add_edge( u, v, 'forward' );
             else add_edge( u, v, 'cross' );
         }
 
-        u.generation++;
+        running.delete( u );
         u.post = postOrder++;
 
         revPostOrder.push( u );
@@ -65,8 +67,7 @@ function DFS( list, cbs = {} )
         post( u );
     }
 
-    generation += 2;
-    list.forEach( node => node.generation < generation && dfs( node ) );
+    list.forEach( node => visit( node ) && dfs( node ) );
 
     rpost( cbs.revPostOrder = revPostOrder.reverse() );
 
