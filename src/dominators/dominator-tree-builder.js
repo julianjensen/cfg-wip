@@ -103,12 +103,13 @@ function DominatorTreeBuilder( graph, nextBlockNum )
         link( block.parent, block );
 
         // Step 3:
-        for ( const semiDominee of block.parent.bucket )
+        for ( const semiDominee of block.parent.bucket ) // v
         {
-            const possibleDominator = _eval( semiDominee );
+            const possibleDominator = _eval( semiDominee ); // y v
 
             assert( graph.getPreN( semiDominee.semi.preNumber ) === block.parent );
 
+            // y < v => v.dom = y else v.dom = p
             if ( possibleDominator.semi.preNumber < semiDominee.semi.preNumber ) semiDominee.dom = possibleDominator;
             else semiDominee.dom = block.parent;
         }
@@ -157,21 +158,6 @@ function DominatorTreeBuilder( graph, nextBlockNum )
         if ( w.dom !== graph.getPreN( w.semi.preNumber ) ) w.dom = w.dom.dom;
     }
 }
-
-/**
- * @typedef {object} DomNode
- * @property {Node} node
- * @property {number} id
- * @property {number} pre
- * @property {?DomNode} idom
- * @property {Array<DomNode>} domSuccs
- * @property {Array<DomNode>} doms
- * @property {Set<DomNode>|Array<DomNode>} frontier
- */
-
-/**
- * @typedef {Array<DomNode>} DomTree
- */
 
 /**
  * @param {NodeList} nodes
@@ -223,7 +209,7 @@ function FindDoms( nodes, cbs = {} )
         if ( idoms[ b.pre ] !== idom )
         {
             idoms[ b.pre ] = idom;
-            changed        = true;
+            changed = true;
         }
     }
 
@@ -237,6 +223,7 @@ function FindDoms( nodes, cbs = {} )
     let domTree = [];
 
     for ( const node of nodes )
+    {
         domTree[ node.pre ] = {
             node:     node,
             id:       node.id,
@@ -246,15 +233,14 @@ function FindDoms( nodes, cbs = {} )
             frontier: new Set(),
             doms:     []
         };
+    }
 
     // const frontiers = [];
 
     /**
      * Find dominance frontiers
      */
-    // nodes.forEach( b => frontiers[ b.pre ] = new Set() );
-
-    domTree.forEach( dn => {
+    return domTree.map( dn => {
         const
             b     = dn.node,
             preds = b.preds;
@@ -262,7 +248,7 @@ function FindDoms( nodes, cbs = {} )
         if ( dn.idom )
             domTree[ dn.idom.pre ].domSuccs.push( dn );
 
-        if ( preds.length < 2 ) return;
+        if ( preds.length < 2 ) return dn;
 
         preds.forEach( runner => {
             while ( runner !== dn.idom )
@@ -273,31 +259,13 @@ function FindDoms( nodes, cbs = {} )
                 runner = rdt.idom;
             }
         } );
-    } );
 
-    return domTree.map( dn => {
-        dn.frontier = [ ...dn.frontier ];
         return dn;
-    } ).sort( ( a, b ) => a.id - b.id );
-
-    // const domTree = nodes
-    //     .map( ( n, i ) => ( {
-    //         node:     n,
-    //         id:       i,
-    //         pre:      n.pre,
-    //         idom:     n.isStart ? void 0 : idoms[ n.pre ],
-    //         domSuccs: [],
-    //         frontier: [ ...frontiers[ n.pre ] ]
-    //     } ) )
-    //     .sort( ( a, b ) => a.pre - b.pre );
-    //
-    // return domTree
-    //     .map( d => {
-    //         if ( !d.idom ) return d;
-    //         d.idom = domTree[ d.idom.pre ];
-    //         d.idom.domSuccs.push( d );
-    //         return d;
-    //     } );
+    } )
+        .map( dn => {
+            dn.frontier = [ ...dn.frontier ];
+            return dn;
+        } ).sort( ( a, b ) => a.id - b.id );
 }
 
 module.exports = {

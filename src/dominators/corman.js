@@ -30,8 +30,8 @@
 
 const
     fs = require( 'fs' ),
-    LTDominators = require( './lt' ),
-    { DominatorTree, DominatorBlock }                          = require( './dominator-chk-block' ),
+    { LTDominators, boost, yalt } = require( './lt' ),
+    { DominatorTree, DominatorBlock }                          = require( './dominator-block' ),
     traversal                                = require( '../traversal' ),
     { DFS, BFS, PrePost, generic }                = traversal,
     { DominatorTreeBuilder, FindDoms } = require( './dominator-tree-builder' ),
@@ -145,19 +145,21 @@ class Node // extends DominatorBlock
         this.rpost    = -1;
         this.bpre     = -1;
         this._isStart = false;
+        this._isExit = false;
         // this.color = 'white';
         /** @type {Node[]} */
         this.preds = [];
         /** @type {Node[]} */
         this.succs = [];
-        /** @type {?Node} */
-        this.chkDom = null;
-        /** @type {Set<Node>} */
-        this.frontier = new Set();
         /** @type {number} */
         this.generation = -1;
-        /** @type {Node[]} */
-        this.domSuccs = [];
+
+        this.parent = null;
+        this.bucket = [];
+        this.semi = this;
+        this.best = this;
+        this.ancestor = null;
+        this.child = -1;
     }
 
     /**
@@ -174,6 +176,22 @@ class Node // extends DominatorBlock
     set isStart( v )
     {
         this._isStart = v;
+    }
+
+    /**
+     * @return {boolean}
+     */
+    get isExit()
+    {
+        return this._isExit;
+    }
+
+    /**
+     * @param {boolean} v
+     */
+    set isExit( v )
+    {
+        this._isExit = v;
     }
 
     /**
@@ -334,6 +352,63 @@ class Node // extends DominatorBlock
  */
 class NodeList
 {
+    print_nodes( withDoms = false )
+    {
+        const
+            { ms, mp } = this.nodes.reduce( ( { ms, mp }, n ) => ( { ms: Math.max( ms, n.succs.length ), mp: Math.max( mp, n.preds.length ) } ), { ms: 0, mp: 0 } );
+
+        console.log(
+            this.nodes.map( n => {
+                let preds = n.preds.map( p => p.id + 1 ).sort(),
+                    succs = n.succs.map( s => s.id + 1 ).sort(),
+                    start = !preds.length ? ' <- START' : '',
+                    end = !succs.length ? ' <- END' : '',
+                    doms = withDoms ? ` --> ${this.dom}, simple: ${this.simpleDom !== void 0 && this.simpleDom !== -1 ? this.simpleDom + 1 : ' '}` : '';
+
+                preds = preds.join( ' ' ).padEnd( mp * 2 - 1 ) + ( preds.length ? ' < ' : '   ' );
+                succs = ( succs.length ? ' > ' : '   ' ) + succs.join( ' ' ).padStart( ms * 2 - 1 );
+
+                return `${preds} ${n.id + 1} ${succs}${start}${end}${doms}`;
+            } ) );
+    }
+
+    init_in_out()
+    {
+        const
+            start = this.nodes.find( n => !n.preds.length ),
+            exit = this.nodes.find( n => !n.succs.length );
+
+        this.startNode = start;
+        this.exitNode = exit;
+        start.isStart = true;
+        start.name = 'start';
+
+        if ( exit )
+        {
+            exit.isExit = true;
+            exit.name = 'exit';
+        }
+
+    }
+
+    do_chk()
+    {
+        this.chk = FindDoms( this, {} );
+        this.chkTree = new DominatorTree( this.chk, 'CHK Dominator Tree' );
+        this.chkTree.toTable();
+        // console.log( `${this.chkTree}` );
+    }
+
+    do_lt1()
+    {
+        this.lt = new LTDominators( this, false );
+        this.ltDoms = this.lt.generate();
+        this.ltTree = new DominatorTree( this.ltDoms, 'LT Dominator Tree' );
+        this.ltTree.toTable();
+        // console.log( `${this.ltTree}` );
+    }
+
+
     /**
      * @param {Array<Array<number>>} nodeList
      */
@@ -345,132 +420,63 @@ class NodeList
         nodeList
             .forEach( lst => this.nodes[ lst[ 0 ] - 1 ].add_succs( ...lst.slice( 1 ).map( si => this.nodes[ si - 1 ] ) ) );
 
-        // nodeList
-        //     .forEach( lst => lst.forEach( n => this.nodes[ n - 1 ] || ( this.nodes[ n - 1 ] = new Node( n ) ) ) );
-        //
-        // nodeList
-        //     // .map( n => this.nodes[ this.nodes.length ] = new Node( n[ 0 ] ) )
-        //     .forEach( ( n, i ) => this.nodes[ n[ 0 ] - 1 ].add_succs( ...nodeList[ i ].slice( 1 ).map( sn => this.nodes[ sn - 1 ] ) ) );
-
-        const
-            { ms, mp } = this.nodes.reduce( ( { ms, mp }, n ) => ( { ms: Math.max( ms, n.succs.length ), mp: Math.max( mp, n.preds.length ) } ), { ms: 0, mp: 0 } );
-
-        console.log(
-        this.nodes.map( n => {
-            let preds = n.preds.map( p => p.id + 1 ).sort(),
-                succs = n.succs.map( s => s.id + 1 ).sort(),
-                start = !preds.length ? ' <- START' : '',
-                end = !succs.length ? ' <- END' : '';
-
-            preds = preds.join( ' ' ).padEnd( mp * 2 - 1 ) + ( preds.length ? ' < ' : '   ' );
-            succs = ( succs.length ? ' > ' : '   ' ) + succs.join( ' ' ).padStart( ms * 2 - 1 );
-
-            return `${preds} ${n.id + 1} ${succs}${start}${end}`;
-        } ) );
+        this.print_nodes();
 
         this.preOrder = [];
         this.postOrder = [];
         this.rPostOrder = [];
         this.results = [];
 
-        this.startNode = this.nodes[ 0 ];
-        this.startNode.isStart = true;
-        this.exitNode = null;
+        this.length = nodeList.length;
 
-        const end = this.nodes.find( n => !n.succs.length );
-        if ( end ) this.endNode = end;
-
-        this.startNode.name = 'start';
-        if ( end ) end.name = 'end';
+        this.init_in_out();
 
         this.maxPreNum = DFS( this.nodes, {
-            pre:   node => this.preOrder.push( node ),
-            post:  node => this.postOrder.push( node ),
-            rpost: node => this.rPostOrder.push( node )
+            pre:   node => this.preOrder[ node.pre ] = node,
+            post:  node => this.postOrder[ node.post ] = node,
+            rpost: node => this.rPostOrder[ node.rpost ] = node,
+            edge: {
+                tree: ( from, to ) => {
+                    to.parent = from;
+                    from.child = to;
+                }
+            }
         } );
 
         BFS( this.startNode );
 
-        // this.nodes.forEach( n => n.post_init() );
-        /**
-         * @param {Node[]} nodes
-         */
-        // const stash_doms = nodes => {
-        //     this.results.push( nodes.reduce( ( rdom, n ) => {
-        //         rdom[ n.post ] = n.chkDom ? n.chkDom.post : 'u';
-        //         return rdom;
-        //     }, [] ) );
-        // };
+        // this.do_lt1();
+        this.do_chk();
 
-        function dom2txt( allDoms, dn )
-        {
-            const
-                doms = [],
-                idComma = arr => arr.map( d => d.id + 1 ).join( ', ' );
-                // preComma = arr => arr.map( d => d.id + 1 ).join( ', ' );
+        // boost( this );
+        yalt( this );
+        this.print_nodes( true );
 
-            let r = dn;
-            while ( r )
-            {
-                doms.push( r.id + 1 );
-                r = allDoms[ r.pre ].idom;
-            }
-
-            // if ( !dn.domSuccs )
-            // {
-            //     console.error( `no succs:`, dn );
-            //     process.exit( 1 );
-            // }
-            //
-            // if ( !dn.frontier )
-            // {
-            //     console.error( `no frontier:`, dn );
-            //     process.exit( 1 );
-            // }
-
-            return `${dn.id + 1} -> ${idComma( dn.domSuccs )}, doms: ${doms.join( ', ' )}, frontier: ${idComma( dn.frontier || [] )}`;
-        }
-
-        this.lt = new LTDominators( this, false );
-        this.ltDoms = this.lt.generate();
-        console.log( 'ltDoms:', this.ltDoms );
-
-        const _pdoms = ad => dn => dom2txt( ad, dn );
-        let pdoms;
-        console.log( 'lt doms:\n    ', this.lt.generate().map( n => `${n.id + 1} -> ${n.domSuccs.map( d => d.id + 1 ).join( ', ' )}` ).join( '\n    ' ) );
-        this.chk = FindDoms( this, {} ); //, { initial: stash_doms, iter: stash_doms } );
-        pdoms = _pdoms( this.chk );
-        this.nodes.forEach( n => n.domSuccs.includes( n ) && n.domSuccs.splice( n.domSuccs.indexOf( n ), 1 ) );
-        console.log( 'chk doms:\n    ', this.chk.map( pdoms ).join( '\n    ' ) );
-        // console.log( 'chk doms:\n    ', this.chk.map( n => `${n.id + 1} -> ${n.domSuccs.map( d => d.id + 1 ).join( ', ' )}` ).join( '\n    ' ) );
-
-        // this.llvm = llvm( this );
-        // pdoms = _pdoms( this.llvm );
-        // console.log( 'llvm doms:\n    ', this.llvm.map( pdoms ).join( '\n    ' ) );
-
-        // this.maxPreNumLt = PrePost( this.startNode );
-        this.byPreNumber = [];
         // this.nodes.forEach( n => this.byPreNumber[ n.preNumber = n.pre ] = n );
         // this.lentar_dominators();
         // this.nodes.forEach( n => n.ltFrontier = [ ...n.dominatorsOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
         // this.nodes.forEach( n => n.ltFrontier = [ ...n.dominanceFrontierOf() ].sort( ( a, b ) => a.preNumber - b.preNumber ) );
-
-        // const
-        //     tree  = [];
-        //
-        // this.nodes.forEach( n => {
-        //     if ( n.chkDom.pre === n.pre ) return;
-        //     if ( !tree[ n.chkDom.pre ] ) tree[ n.chkDom.pre ] = [];
-        //     tree[ n.chkDom.pre ].push( n.pre );
-        // } );
-        //
-        // tree.forEach( ( s, i ) => console.log( `${toAsc( i )} -> ${s.map( toAsc ).join( ' ' )}` ) );
-        // console.log( '' );
-        // tree.forEach( ( s, i ) => console.log( `${i + 1} -> ${s.map( n => n + 1 ).join( ' ' )}` ) );
-
-        // llvm( this.nodes );
     }
 
+    /**
+     * @type {Iterable<Node>}
+     */
+    * by_pre()
+    {
+        yield *this.nodes.sort( ( a, b ) => a.id - b.id );
+    }
+
+    /**
+     * @type {Iterable<Node>}
+     */
+    * by_rpre()
+    {
+        yield* this.nodes.sort( ( a, b ) => a.id - b.id ).reverse();
+    }
+
+    /**
+     * @type {Iterable<Node>}
+     */
     * [Symbol.iterator]()
     {
         yield *this.nodes;
@@ -562,7 +568,7 @@ class NodeList
 `;
 
         // r += str_table( 'Nodes added order', headers, this.nodes.map( n => n.toTable() ) ) + '\n';
-        r += str_table( 'Nodes pre order', headers, this.preOrder.map( n => n.toTable() ) ) + '\n';
+        // r += str_table( 'Nodes pre order', headers, this.preOrder.map( n => n.toTable() ) ) + '\n';
         // r += str_table( 'Nodes post order', headers, this.postOrder.map( n => n.toTable() ) ) + '\n';
         // r += str_table( 'Nodes reverse post order', headers, this.rPostOrder.map( n => n.toTable() ) ) + '\n';
 

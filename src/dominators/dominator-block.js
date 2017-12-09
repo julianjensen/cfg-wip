@@ -7,68 +7,274 @@
 'use strict';
 
 const
+    { as_table } = require( '../dump' ),
     adder = s => val => {
         if ( s.has( val ) ) return false;
         s.add( val );
         return true;
     };
 
-/** */
-class DominatorBlock
+/**
+ * @typedef {object} DomNode
+ * @template T
+ * @property {T} node
+ * @property {number} id
+ * @property {number} pre
+ * @property {?DomNode} idom
+ * @property {Array<DomNode>} domSuccs
+ * @property {Array<DomNode>} doms
+ * @property {Set<DomNode>|Array<DomNode>} frontier
+ * @property {DominatorBlock} [db]
+ */
+
+/**
+ * @typedef {Array<DomNode>} DomTree
+ */
+
+
+/**
+ * @template T
+ */
+class DominatorTree
 {
-    constructor()
+    /**
+     * @param {DomTree|Array<Node>} domTree
+     * @param {string} [title]
+     */
+    constructor( domTree, title = 'Dominator Tree' )
     {
-        this.resetLT();
-    }
+        this.name = title;
+        this.domTree = domTree;
+        this.domBlocks = domTree.map( dn => dn.db = new DominatorBlock( this, dn ) );
+        this.byPre = [];
+        this.domBlocks.forEach( db => {
+            this.byPre[ db.pre ] = db;
+            if ( db.node.isStart ) this._root = db;
+            if ( db.node.isExit ) this._exit = db;
+        } );
+        this.domBlocks.forEach( db => db.post_init() );
+        // this.domBlocks.forEach( db => db.succs = db.succs.map( s => this.byPre[ s.pre ] ) );
 
-    get preNumber()
-    {
-        return this.pre;
-    }
-
-    set preNumber( v )
-    {
-        this.pre = v;
-    }
-
-    post_init()
-    {
-        if ( this.parent ) this.ancestor = this.parent;
-    }
-
-    resetLT()
-    {
-        this.preDom  = -1;
-        this.postDom = -1;
-        /** @type {?Node} */
-        this.parent = null;
-
-        /** @type {?Node} */
-        this.dom = null;
-        /** @type {?Node} */
-        this.ancestor = null;
-        /** @type {?Node[]} */
-        this.bucket = [];
-        /** @type {?Node} */
-        this.label = this;
-        /** @type {?Node|DominatorBlock} */
-        this.semi = this;
-        /** @type {?Node} */
-        this.idomParent = null;
-        /** @type {Node[]} */
-        this.idomKids = [];
-        /** @type {Node} */
-        this.ltFrontier = [];
-        this.semidom = -1;
     }
 
     /**
-     * @param {BasicBlock} to
-     * @return {boolean}
+     * @return {T | *}
+     */
+    get root()
+    {
+        return this._root;
+    }
+
+    /**
+     * @return {T | *}
+     */
+    get start()
+    {
+        return this._root;
+    }
+
+    /**
+     * @return {T | *}
+     */
+    get exit()
+    {
+        return this._exit;
+    }
+
+    /**
+     * @return {T | *}
+     */
+    get end()
+    {
+        return this._exit;
+    }
+
+    /**
+     * @type {Iterable<DominatorBlock>}
+     */
+    * [Symbol.iterator]()
+    {
+        yield *this.byPre;
+    }
+
+    /**
+     * @type {Iterable<DominatorBlock>}
+     */
+    * byId()
+    {
+        yield *this.domBlocks.sort( ( a, b ) => a.id - b.id );
+    }
+
+    /**
+     * @return {string}
+     */
+    toString()
+    {
+        return this.domBlocks.map( b => `${b}` ).join( '\n' );
+    }
+
+    /**
+     * Current columns: `id, pre, post, succs, dominates, frontier, dom. by`
+     */
+    toTable()
+    {
+        as_table( this.name, [ 'id', 'pre', 'post', 'succs', 'dominates', 'frontier', 'dominated by' ], this.domBlocks.map( b => b.toRow() ) );
+    }
+}
+
+/** */
+class DominatorBlock
+{
+    /**
+     * @param {DominatorTree} domTree
+     * @param {DomNode|Node} domNode
+     */
+    constructor( domTree, domNode )
+    {
+        if ( domNode && domNode.constructor && domNode.constructor.name === 'Node' )
+        {
+            domNode = {
+                node: domNode,
+                id: domNode.id,
+                pre: domNode.pre,
+                frontier: [],
+                idom: null,
+                domSuccs: null
+            };
+
+            this.parent = domNode.parent;
+            this.best = this.semi = domNode;
+            this.ancestor = null;
+            this.bucket = [];
+        }
+
+        this.domTree = domTree;
+        this.domNode = domNode;
+
+        this.node = domNode.node;
+        this.id = domNode.id;
+        this.pre = domNode.pre;
+        this.post = domNode.node.post;
+
+        // Object.getOwnPropertyDescriptors( DominatorBlock.prototype )
+        //     .forEach( desc => {
+        //         if ( typeof desc.name !== 'string' || typeof desc.value !== 'function' || desc.name.startsWith( 'for' ) || desc.name.startsWith( '_' ) || [ 'strictlyDominates', 'toString' ].includes( desc.name ) ) return;
+        //         this[ desc.name ] = ( ...args ) => {
+        //             if ( this.cache[ desc.name ] ) return this.cache[ desc.name ];
+        //             return this.cache[ desc.name ] = desc.value( ...args );
+        //         };
+        //     } );
+    }
+
+    /**
+     *
+     */
+    post_init()
+    {
+        const
+            dtPre = this.domTree.byPre,
+            domNode = this.domNode;
+
+        this.idom = domNode.idom && dtPre[ domNode.idom.pre ];
+        this.succs = domNode.domSuccs ? domNode.domSuccs.map( dn => dtPre[ dn.pre ] ) : [];
+        this.frontier = domNode.frontier.map( dn => dtPre[ dn.pre ] );
+
+    }
+
+    /** ****************************************************************************************************************************
+     *
+     * DOMINATORS UP
+     *
+     *******************************************************************************************************************************/
+
+    /**
+     * @param {function(DominatorBlock)} functor
+     */
+    forStrictDominators( functor )
+    {
+        let block = this.idom;
+
+        while ( block )
+        {
+            functor( block );
+            block = block.idom;
+        }
+    }
+
+    /**
+     * Note: This will visit the dominators starting with the 'to' node and moving up the idom tree
+     * until it gets to the root.
+     *
+     * @param {function} functor
+     */
+    forDominators( functor )
+    {
+        let block = this;
+
+        while ( block )
+        {
+            functor( block );
+            block = block.idom;
+        }
+    }
+
+    /**
+     * @return {Array<DominatorBlock>}
+     */
+    strictDominators()
+    {
+        let block = this.idom;
+        const r = [];
+
+        while ( block )
+        {
+            r.push( block );
+            block = block.idom;
+        }
+
+        return r;
+    }
+
+    /**
+     * @return {Array<DominatorBlock>}
+     */
+    dominators()
+    {
+        let block = this;
+        if ( this.id === 2 )
+        {
+            block = this;
+        }
+        const r = [];
+
+        while ( block )
+        {
+            r.push( block );
+            block = block.idom;
+        }
+
+        return r;
+    }
+
+    /** ****************************************************************************************************************************
+     *
+     * DOMINATES DOWN
+     *
+     *******************************************************************************************************************************/
+
+    /**
+     * @param {BasicBlock|Node|DomNode} [to]
+     * @return {boolean|Array<DominatorBlock>}
      */
     strictlyDominates( to )
     {
-        return to.preDom > this.preDom && to.postDom < this.postDom;
+        if ( to ) return to.pre > this.pre && to.post < this.post;
+
+        const result = new Set();
+
+        this.forStrictlyDominates( node => result.add( node ) );
+
+        return [ ...result ];
     }
 
     /**
@@ -77,68 +283,28 @@ class DominatorBlock
      */
     dominates( to )
     {
-        return this === to || this.strictlyDominates( to );
-    }
-
-    /**
-     * Returns the immediate dominator of this block. Returns null for the root block.
-     */
-    idom()
-    {
-        return this.idomParent;
+        return this.pre === to.pre || this.strictlyDominates( to );
     }
 
     /**
      * @param {function} functor
      */
-    forAllStrictDominatorsOf( functor )
+    forStrictlyDominates( functor )
     {
-        let block = this.idomParent;
-
-        while ( block )
-        {
-            functor( block );
-            block = block.idomParent;
-        }
-    }
-
-    /**
-     * Note: This will visit the dominators starting with the 'to' node and moving up the idom tree
-     * until it gets to the root. Some clients of this function, like B3::moveConstants(), rely on this
-     * order.
-     *
-     * @param {function} functor
-     */
-    forAllDominatorsOf( functor )
-    {
-        let block = this;
-
-        while ( block )
-        {
-            functor( block );
-            block = block.idomParent;
-        }
-    }
-
-    /**
-     * @param {function} functor
-     */
-    forAllBlocksStrictlyDominatedBy( functor )
-    {
-        let worklist = this.idomKids.slice();
+        let worklist = this.succs.slice();
 
         while ( worklist.length )
         {
             const block = worklist.pop();
             functor( block );
-            worklist = worklist.concat( block.idomKids );
+            worklist = worklist.concat( block.succs );
         }
     }
 
     /**
      * @param {function} functor
      */
-    forAllBlocksDominatedBy( functor )
+    forDominates( functor )
     {
         let worklist = [ this ];
 
@@ -146,120 +312,79 @@ class DominatorBlock
         {
             const block = worklist.pop();
             functor( block );
-            worklist = worklist.concat( block.idomKids );
+            worklist = worklist.concat( block.succs );
         }
     }
 
-    /**
-     * @return {Set<BasicBlock|Node>}
-     */
-    strictDominatorsOf()
-    {
-        const result = new Set();
-
-        this.forAllStrictDominatorsOf( node => result.add( node ) );
-        return result;
-    }
-
-    /**
-     * @return {Set<BasicBlock|Node>}
-     */
-    dominatorsOf()
-    {
-        const result = new Set();
-
-        this.forAllDominatorsOf( node => result.add( node ) );
-        return result;
-    }
-
-    /**
-     * @return {Set<BasicBlock|Node>}
-     */
-    blocksStrictlyDominatedBy()
-    {
-        const result = new Set();
-
-        this.forAllBlocksStrictlyDominatedBy( node => result.add( node ) );
-        return result;
-    }
-
-    /**
-     * @return {Set<BasicBlock|Node>}
-     */
-    blocksDominatedBy()
-    {
-        const result = new Set();
-
-        this.forAllBlocksDominatedBy( node => result.add( node ) );
-        return result;
-    }
+    /** ****************************************************************************************************************************
+     *
+     * DOMINANCE FRONTIER DOWN
+     *
+     *******************************************************************************************************************************/
 
     /**
      * @param {function} functor
-     * @return {Set<BasicBlock|Node>}
      */
-    forAllBlocksInDominanceFrontierOf( functor )
+    forDominanceFrontier( functor )
     {
         const
             add = adder( new Set() );
 
-        this.forAllBlocksInDominanceFrontierOfImpl( block => add( block ) && functor( block ) );
+        this._forDominanceFrontier( block => add( block ) && functor( block ) );
     }
 
     /**
-     * @return {Set<BasicBlock|Node>}
+     * @return {Array<DominatorBlock>}
      */
-    dominanceFrontierOf()
+    dominanceFrontier()
     {
         const result = new Set();
 
-        this.forAllBlocksInDominanceFrontierOf( node => result.add( node ) );
-        return result;
+        this.forDominanceFrontier( node => result.add( node ) );
+        return [ ...result ];
     }
 
     /**
      * @param {function} functor
-     * @return {Set<BasicBlock|Node>}
      */
-    forAllBlocksInIteratedDominanceFrontierOf( functor )
+    forIteratedDominanceFrontier( functor )
     {
         const caller = block => {
             functor( block );
             return true;
         };
 
-        this.forAllBlocksInPrunedIteratedDominanceFrontierOf( caller );
+        this.forPrunedIteratedDominanceFrontier( caller );
     }
 
     /**
-     * This is a close relative of forAllBlocksInIteratedDominanceFrontierOf(), which allows the
+     * This is a close relative of forIteratedDominanceFrontier(), which allows the
      * given functor to return false to indicate that we don't wish to consider the given block.
      * Useful for computing pruned SSA form.
      *
      * @param {function} functor
-     * @return {Set<BasicBlock|Node>}
      */
-    forAllBlocksInPrunedIteratedDominanceFrontierOf( functor )
+    forPrunedIteratedDominanceFrontier( functor )
     {
         const
             set = new Set(),
             add = adder( set );
 
-        this.forAllBlocksInIteratedDominanceFrontierOfImpl( block => add( block ) && functor( block ) );
+        this._forIteratedDominanceFrontier( block => add( block ) && functor( block ) );
     }
 
     /**
-     * @return {Set<BasicBlock|Node>}
+     * @return {Array<DominatorBlock>}
      */
-    iteratedDominanceFrontierOf()
+    iteratedDominanceFrontier()
     {
         const
             _result = new Set(),
             result  = adder( _result );
 
-        this.forAllBlocksInIteratedDominanceFrontierOfImpl( result );
+        this._forIteratedDominanceFrontier( result );
 
-        return _result;
+        return [ ..._result ];
     }
 
     /**
@@ -275,18 +400,52 @@ class DominatorBlock
      *
      * @param {function} functor
      */
-    forAllBlocksInDominanceFrontierOfImpl( functor )
+    _forDominanceFrontier( functor )
     {
-        this.forAllBlocksDominatedBy( block => block.succs.forEach( to => !this.strictlyDominates( to ) && functor( this, to ) ) );
+        this.forDominates( block => block.succs.forEach( to => !this.strictlyDominates( to ) && functor( this, to ) ) );
     }
 
-    forAllBlocksInIteratedDominanceFrontierOfImpl( functor )
+    /**
+     * @param {function} functor
+     * @private
+     */
+    _forIteratedDominanceFrontier( functor )
     {
         const worklist = [ this ];
 
         while ( worklist.length )
-            worklist.pop().forAllBlocksInDominanceFrontierOfImpl( otherBlock => functor( otherBlock ) && worklist.push( otherBlock ) );
+            worklist.pop()._forDominanceFrontier( otherBlock => functor( otherBlock ) && worklist.push( otherBlock ) );
+    }
+
+    /**
+     * @return {string}
+     */
+    toString()
+    {
+        const
+            doms    = [],
+            idComma = arr => arr.map( d => d.id + 1 ).join( ', ' );
+
+        this.forStrictlyDominates( b => doms.push( b ) );
+
+        return `${this.id + 1} -> ${idComma( this.succs )}, doms: ${idComma( doms )}, frontier: ${idComma( this.frontier || [] )}`;
+    }
+
+    /**
+     * return {Array<string|number>}
+     */
+    toRow()
+    {
+        const
+            doms    = [],
+            idoms = this.dominators(),
+            idComma = arr => arr.map( d => d.id + 1 ).join( ' ' );
+
+        this.forStrictlyDominates( b => doms.push( b ) );
+        // this.forDominators( b => idoms.push( b ) );
+
+        return [ this.id + 1, this.pre + 1, this.post + 1, idComma( this.succs ), idComma( doms ), idComma( this.frontier ), idComma( idoms ) ];
     }
 }
 
-module.exports = DominatorBlock;
+module.exports = { DominatorTree, DominatorBlock };

@@ -28,9 +28,11 @@ function DFS( list, cbs = {} )
         pre = n => callback( cbs.pre, n ),
         post = n => callback( cbs.post, n ),
         rpost = list => isFn( cbs.rpost ) && list.forEach( n => cbs.rpost( n ) ),
+        rpre = list => isFn( cbs.rpre ) && list.forEach( n => cbs.rpre( n ) ),
         process = ( u, v ) => { add_edge( u, v, 'tree' ); dfs( v ); },
 
         revPostOrder = [],
+        revPreOrder = [],
         running = new Set(),
         _v = new Set(),
         visit = n => _v.has( n ) ? false : !!_v.add( n );
@@ -45,6 +47,7 @@ function DFS( list, cbs = {} )
     function dfs( u )
     {
         u.pre = preOrder++;
+        revPreOrder.push( u );
         running.add( u );
 
         pre( u );
@@ -70,6 +73,7 @@ function DFS( list, cbs = {} )
     list.forEach( node => visit( node ) && dfs( node ) );
 
     rpost( cbs.revPostOrder = revPostOrder.reverse() );
+    rpre( cbs.revPreOrder = revPreOrder.reverse() );
 
     return preOrder;
 }
