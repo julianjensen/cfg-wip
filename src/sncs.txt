@@ -1,0 +1,23 @@
+Algorithm SNCA(G = (V, A, r))
+    D ← DFS(r)
+    for w ∈ V − r in reverse preorder of D do
+        for v ∈ pred(w) do
+            snca compress(v)
+            semi[w] ← min {semi[w], label[v]}
+        done
+        label[w] ← semi[w]
+    done
+
+    for v ∈ V − r in preorder of D do
+        while idom[v] > semi[v] do
+            idom[v] ← idom[idom[v]]
+        done
+    done
+
+snca compress(v)
+    u ← ancestor[v]
+    if ancestor[u] !== 0 then
+        compress(u)
+        if label[u] < label[v] then label[v] ← label[u] endif
+        ancestor[v] ← ancestor[u]
+    endif

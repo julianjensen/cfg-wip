@@ -10,7 +10,7 @@
 // import { ExtendedGraphNodeWorklist, GraphNodeWithOrder, GraphVisitOrder } from "./graph-node-worklist";
 
 const
-    DominatorTreeBuilder = require( '../src/dominators/dominator-tree-builder' ),
+    DominatorTreeBuilder = require( '../src/dominators/iterative-doms' ),
     BasicBlock = require( '../src/basic-block' );
 
 

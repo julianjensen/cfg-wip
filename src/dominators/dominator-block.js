@@ -8,29 +8,11 @@
 
 const
     { as_table } = require( '../dump' ),
-    adder = s => val => {
+    adder        = s => val => {
         if ( s.has( val ) ) return false;
         s.add( val );
         return true;
     };
-
-/**
- * @typedef {object} DomNode
- * @template T
- * @property {T} node
- * @property {number} id
- * @property {number} pre
- * @property {?DomNode} idom
- * @property {Array<DomNode>} domSuccs
- * @property {Array<DomNode>} doms
- * @property {Set<DomNode>|Array<DomNode>} frontier
- * @property {DominatorBlock} [db]
- */
-
-/**
- * @typedef {Array<DomNode>} DomTree
- */
-
 
 /**
  * @template T
@@ -38,23 +20,62 @@ const
 class DominatorTree
 {
     /**
-     * @param {DomTree|Array<Node>} domTree
+     * @param {NodeList} nodeList
+     * @param {Array<number>} idoms
      * @param {string} [title]
+     * @param {boolean} [postDom]
      */
-    constructor( domTree, title = 'Dominator Tree' )
+    constructor( nodeList, idoms, title = 'Dominator Tree', postDom = false )
     {
-        this.name = title;
-        this.domTree = domTree;
-        this.domBlocks = domTree.map( dn => dn.db = new DominatorBlock( this, dn ) );
-        this.byPre = [];
-        this.domBlocks.forEach( db => {
-            this.byPre[ db.pre ] = db;
+        /** @type {DominatorBlock} */
+        this.domNodes = idoms.map( ( idom, nodeId ) => new DominatorBlock( this, nodeList.get( nodeId ), idom ) );
+        /** @type {T} */
+        this._root = null;
+        /** @type {T} */
+        this._exit = null;
+        this.domNodes.forEach( db => {
+            db.post_init();
             if ( db.node.isStart ) this._root = db;
             if ( db.node.isExit ) this._exit = db;
         } );
-        this.domBlocks.forEach( db => db.post_init() );
-        // this.domBlocks.forEach( db => db.succs = db.succs.map( s => this.byPre[ s.pre ] ) );
 
+        if ( postDom )
+            [ this._root, this._exit ] = [ this._exit, this._root ];
+
+        this.calc_frontiers( this.domNodes, postDom );
+
+        /** @type {string} */
+        this.name      = title;
+    }
+
+    /**
+     * Find dominance frontiers
+     */
+    calc_frontiers( domTree, postDom )
+    {
+        const outEdges = postDom ? 'succs' : 'preds';
+
+        domTree.forEach( dn => dn.frontier = new Set() );
+
+        domTree.forEach( dn => {
+                const
+                    b     = dn.node,
+                    edges = b[ outEdges ];
+
+                if ( edges.length < 2 ) return;
+
+                edges.forEach( runner => {
+                    while ( runner.id !== dn.idom.id )
+                    {
+                        const rdt = this.domNodes[ runner.id ];
+
+                        rdt.frontier.add( dn );
+                        runner = rdt.idom.node;
+                    }
+                } );
+            } );
+
+        domTree.forEach( dn => dn.frontier = [ ...dn.frontier ] );
     }
 
     /**
@@ -92,9 +113,9 @@ class DominatorTree
     /**
      * @type {Iterable<DominatorBlock>}
      */
-    * [Symbol.iterator]()
+    * [ Symbol.iterator ]()
     {
-        yield *this.byPre;
+        yield* this.byPre;
     }
 
     /**
@@ -102,7 +123,7 @@ class DominatorTree
      */
     * byId()
     {
-        yield *this.domBlocks.sort( ( a, b ) => a.id - b.id );
+        yield* this.domBlocks.sort( ( a, b ) => a.id - b.id );
     }
 
     /**
@@ -118,7 +139,8 @@ class DominatorTree
      */
     toTable()
     {
-        as_table( this.name, [ 'id', 'pre', 'post', 'succs', 'dominates', 'frontier', 'dominated by' ], this.domBlocks.map( b => b.toRow() ) );
+        as_table( this.name, [ 'id', 'pre', 'post', 'succs', 'dominates', 'frontier', 'dominated by' ], this.domNodes.map( b => b.toRow() ) );
+        return this;
     }
 }
 
@@ -126,44 +148,18 @@ class DominatorTree
 class DominatorBlock
 {
     /**
-     * @param {DominatorTree} domTree
-     * @param {DomNode|Node} domNode
+     * @param {DominatorTree} tree
+     * @param {Node} node
+     * @param {number} idom
      */
-    constructor( domTree, domNode )
+    constructor( tree, node, idom )
     {
-        if ( domNode && domNode.constructor && domNode.constructor.name === 'Node' )
-        {
-            domNode = {
-                node: domNode,
-                id: domNode.id,
-                pre: domNode.pre,
-                frontier: [],
-                idom: null,
-                domSuccs: null
-            };
-
-            this.parent = domNode.parent;
-            this.best = this.semi = domNode;
-            this.ancestor = null;
-            this.bucket = [];
-        }
-
-        this.domTree = domTree;
-        this.domNode = domNode;
-
-        this.node = domNode.node;
-        this.id = domNode.id;
-        this.pre = domNode.pre;
-        this.post = domNode.node.post;
-
-        // Object.getOwnPropertyDescriptors( DominatorBlock.prototype )
-        //     .forEach( desc => {
-        //         if ( typeof desc.name !== 'string' || typeof desc.value !== 'function' || desc.name.startsWith( 'for' ) || desc.name.startsWith( '_' ) || [ 'strictlyDominates', 'toString' ].includes( desc.name ) ) return;
-        //         this[ desc.name ] = ( ...args ) => {
-        //             if ( this.cache[ desc.name ] ) return this.cache[ desc.name ];
-        //             return this.cache[ desc.name ] = desc.value( ...args );
-        //         };
-        //     } );
+        this.tree = tree;
+        this.node = node;
+        this.id = node.id;
+        this.idomId = idom;
+        this.frontier = [];
+        this.succs = [];
     }
 
     /**
@@ -171,14 +167,10 @@ class DominatorBlock
      */
     post_init()
     {
-        const
-            dtPre = this.domTree.byPre,
-            domNode = this.domNode;
+        if ( this.node.isStart ) return;
 
-        this.idom = domNode.idom && dtPre[ domNode.idom.pre ];
-        this.succs = domNode.domSuccs ? domNode.domSuccs.map( dn => dtPre[ dn.pre ] ) : [];
-        this.frontier = domNode.frontier.map( dn => dtPre[ dn.pre ] );
-
+        this.idom     = this.tree.domNodes[ this.idomId ];
+        this.idom.succs.push( this );
     }
 
     /** ****************************************************************************************************************************
@@ -224,7 +216,7 @@ class DominatorBlock
     strictDominators()
     {
         let block = this.idom;
-        const r = [];
+        const r   = [];
 
         while ( block )
         {
@@ -241,10 +233,7 @@ class DominatorBlock
     dominators()
     {
         let block = this;
-        if ( this.id === 2 )
-        {
-            block = this;
-        }
+
         const r = [];
 
         while ( block )
@@ -438,13 +427,13 @@ class DominatorBlock
     {
         const
             doms    = [],
-            idoms = this.dominators(),
+            idoms   = this.dominators(),
             idComma = arr => arr.map( d => d.id + 1 ).join( ' ' );
 
         this.forStrictlyDominates( b => doms.push( b ) );
         // this.forDominators( b => idoms.push( b ) );
 
-        return [ this.id + 1, this.pre + 1, this.post + 1, idComma( this.succs ), idComma( doms ), idComma( this.frontier ), idComma( idoms ) ];
+        return [ this.id + 1, this.node.pre + 1, this.node.post + 1, idComma( this.succs ), idComma( doms ), idComma( this.frontier ), idComma( idoms ) ];
     }
 }
 

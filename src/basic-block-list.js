@@ -11,7 +11,7 @@ const assert            = require( 'assert' ),
       BlockArray        = require( './pred-succ' ),
       { EdgeList }      = require( './edge' ),
       BasicBlock        = require( './basic-block' ),
-      { DominatorTreeBuilder, FindDoms } = require( './dominators/dominator-tree-builder' ),
+      { DominatorTreeBuilder, FindDoms } = require( './dominators/iterative-doms' ),
       defaultDotOptions = {
           defaults:      {
               default:   '#0D3B66',

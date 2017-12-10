@@ -29,16 +29,18 @@ function DFS( list, cbs = {} )
         post = n => callback( cbs.post, n ),
         rpost = list => isFn( cbs.rpost ) && list.forEach( n => cbs.rpost( n ) ),
         rpre = list => isFn( cbs.rpre ) && list.forEach( n => cbs.rpre( n ) ),
-        process = ( u, v ) => { add_edge( u, v, 'tree' ); dfs( v ); },
+        process = ( u, v ) => { add_edge( u, v, 'tree' ); v.parent = u; dfs( v ); },
 
-        revPostOrder = [],
-        revPreOrder = [],
+        postOrder = [],
+        preOrder = [],
         running = new Set(),
         _v = new Set(),
-        visit = n => _v.has( n ) ? false : !!_v.add( n );
+        visit = n => _v.has( n ) ? false : !!_v.add( n ),
 
-    let preOrder  = 0,
-        postOrder = 0,
+        outEdges = cbs.POSTDOM ? 'preds' : 'succs';
+
+    let preOrderN  = 0,
+        postOrderN = 0,
         rpostCnt  = list.length - 1;
 
     /**
@@ -46,16 +48,14 @@ function DFS( list, cbs = {} )
      */
     function dfs( u )
     {
-        u.pre = preOrder++;
-        revPreOrder.push( u );
+        u.pre = preOrderN++;
+        preOrder.push( u );
         running.add( u );
 
-        pre( u );
+        // pre( u );
 
-        for ( const v of u.succs )
+        for ( const v of u[ outEdges ] )
         {
-            // v.add_preds( u );
-
             if ( visit( v ) ) process( u, v );
             else if ( running.has( v ) ) add_edge( u, v, 'back' );
             else if ( u.pre < v.pre ) add_edge( u, v, 'forward' );
@@ -63,122 +63,56 @@ function DFS( list, cbs = {} )
         }
 
         running.delete( u );
-        u.post = postOrder++;
+        u.post = postOrderN++;
 
-        revPostOrder.push( u );
+        postOrder.push( u );
         u.rpost = rpostCnt--;
-        post( u );
+        // post( u );
     }
 
-    list.forEach( node => visit( node ) && dfs( node ) );
+    // const all = CBS.POSTDOM ? list.reverse()
+    // list.forEach( node => visit( node ) && dfs( node ) );
 
-    rpost( cbs.revPostOrder = revPostOrder.reverse() );
-    rpre( cbs.revPreOrder = revPreOrder.reverse() );
+    dfs( cbs.POSTDOM ? list.exitNode : list.startNode );
 
-    return preOrder;
-}
-/**
- * Alternative numbering sequence used by WebKit.
- *
- * @param {Node} root
- * @return {number}
- */
-function PrePost( root )
-{
-    generation += 2;
+    cbs.preOrder = preOrder;
+    cbs.postOrder = postOrder;
+    if ( cbs.pre ) preOrder.forEach( pre );
+    if ( cbs.post ) postOrder.forEach( post );
+    rpost( cbs.revPostOrder = postOrder.reverse() );
+    rpre( cbs.revPreOrder = preOrder.reverse() );
 
-    const worklist = [ { node: root, order: 1 } ];
-
-    let nextPreNumber  = 0,
-        nextPostNumber = 0;
-
-    while ( worklist.length )
-    {
-        const { node, order } = worklist.pop();
-
-        switch ( order )
-        {
-            case 1:
-                node.preNumber = nextPreNumber++;
-                node.generation = generation;
-
-                worklist.push( { node, order: -1 } );
-
-                for ( const kid of node.succs )
-                {
-                    if ( kid.generation < generation )
-                        worklist.push( { node: kid, order: 1 } );
-                }
-                break;
-
-            case -1:
-                node.postNumber = nextPostNumber++;
-                break;
-        }
-    }
-
-    return nextPreNumber;
+    return preOrderN;
 }
 
 /**
  * @param {Node} root
+ * @return {Array<Node>}
  */
 function BFS( root )
 {
-    generation += 2;
-
     const
+        _v    = new Set(),
+        visit = n => _v.has( n ) ? false : !!_v.add( n ),
+
         /** @type {Array<Node>} */
         queue = [ root ];
 
     let n,
+        bfOrder = [],
         preOrder = 0;
 
-    root.generation = generation;
+    visit( root );
 
     while ( ( n = queue.shift() ) )
     {
         n.bpre = preOrder++;
+        bfOrder.push( n );
 
-        queue.push( ...n.succs.map( c => c.get( generation ) ).filter( c => !!c ) );
-    }
-}
-
-/**
- * @param type
- * @param head
- * @param succs
- * @param callback
- */
-function generic( { type, head, succs = n => n.succs, callback } )
-{
-    const rpost = [];
-
-    function _walk( n )
-    {
-        if ( n.generation === generation ) return;
-
-        n.generation += 2;
-
-        if ( type === 'pre' )
-            callback( n );
-        succs( n ).forEach( _walk );
-        if ( type === 'post' )
-            callback( n );
-        if ( type === 'rpost' )
-            rpost.push( n );
+        queue.push( ...n.succs.filter( visit ) );
     }
 
-    generation += 2;
-
-    if ( type === 'rpost' )
-        rpost.reverse().forEach( callback );
-
-    _walk( head );
+    return bfOrder;
 }
 
-module.exports = { DFS, BFS, PrePost, generic };
-Object.defineProperty( module.exports, 'generation', {
-    get() { return generation; },
-    set() { return generation; }
-} );
+module.exports = { DFS, BFS };
