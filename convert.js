@@ -141,6 +141,33 @@ function convert( str, target = 'unicode', set = light )
             ud    = () => boxv( _up() ) && boxv( _down() ),
             tb    = () => boxh( _left() ) && boxh( _right() );
 
+        // function corner( x, y )
+        // {
+        //     const
+        //         boxUp = '|+><'.includes( char( x, y - 1 ) ),
+        //         boxDown = '|+><'.includes( char( x, y + 1 ) ),
+        //         boxRight = '-+^vV'.includes( char( x + 1, y ) ),
+        //         boxLeft = '-+^vV'.includes( char( x - 1, y ) );
+        //
+        //     if ( boxUp && boxRight && !boxLeft && !boxDown ) return set.ll;
+        //     if ( boxDown && boxRight && !boxLeft && !boxUp ) return set.ul;
+        //     if ( boxUp && boxLeft && !boxRight && !boxDown ) return set.lr;
+        //     if ( boxDown && boxLeft && !boxRight && !boxUp ) return set.ur;
+        //
+        //     if ( boxUp && boxDown && boxRight && !boxLeft )
+        //     {
+        //         const below = corner( x, y + 1 );
+        //
+        //         return set.rx;
+        //     }
+        //
+        //     if ( boxUp && boxDown && boxLeft && !boxRight ) return set.lx;
+        //     if ( boxLeft && boxRight && boxUp && !boxDown ) return set.tx;
+        //     if ( boxLeft && boxRight && !boxUp && boxDown ) return set.bx;
+        //
+        //     if ( boxLeft && boxRight && boxUp && boxDown ) return set.x;
+        // }
+
         switch ( ch )
         {
             case '|':
@@ -238,54 +265,103 @@ const
 
 `;
 
-const result = convert( testDiagram );
+const ubiq = `
+          +---------+
++---------+ START 0 |
+|         +----+----+
+|              |
+|              |
+|            +-v-+
+|            |   |
+|     +------+ 1 |
+|     |      |   |
+|     |      +-+-+
+|     |        |
+|     |        |
+|     |      +-v-+
+|     |      | 2 <------------+
+|     |      +-+-+            |
+|     |        |              |
+|     |        |              |
+|     |      +-v-+            |
+|     +------>   |            |
+|     +------+ 3 +------+     |
+|     |      +---+      |     |
+|     |                 |     |
+|     |                 |     |
+|   +-v-+             +-v-+   |
+|   | 4 |             | 5 |   |
+|   +-+-+             +-+-+   |
+|     |                 |     |
+|     |                 |     |
+|     |      +---+      |     |
+|     +------> 6 <------+     |
+|            |   +------------+
+|            +---+             
+|              |
+|              |
+|            +-v-+
+|            | 7 |
+|            +-+-+
+|              |
+|              |
+|         +----v----+
++--------->  EXIT 8 |
+          +---------+
+`;
+
+// const result = convert( testDiagram );
+console.log( ubiq );
+const result = convert( ubiq );
 console.log( result );
-const ascii = convert( result, 'ascii' );
-console.log( ascii );
+// const ascii = convert( result, 'ascii' );
+// console.log( ascii );
+//
+// console.log( `          +-----+
+//           |     |
+//    +------+  1  +------+
+//    |      |     |      |
+//    |      +-----+      |
+//    |                   |
+//    |                   |
+// +--v--+             +--v--+
+// |     |             |     |
+// |  2  |         +---+  3  +---+
+// |     |         |   |     |   |
+// +--+--+         |   +-----+   |
+//    |            |             |
+//    |            |             |
+//    |            |             |
+// +--v--+      +--v--+       +--v--+
+// |     +------>     +------->     |
+// |  4  |      |  5  |       |  6  |
+// |     <------+     <-------+     |
+// +-----+      +-----+       +-----+
+// ` );
 
-console.log( `          +-----+
-          |     |
-   +------+  1  +------+
-   |      |     |      |
-   |      +-----+      |
-   |                   |
-   |                   |
-+--v--+             +--v--+
-|     |             |     |
-|  2  |         +---+  3  +---+
-|     |         |   |     |   |
-+--+--+         |   +-----+   |
-   |            |             |
-   |            |             |
-   |            |             |
-+--v--+      +--v--+       +--v--+
-|     +------>     +------->     |
-|  4  |      |  5  |       |  6  |
-|     <------+     <-------+     |
-+-----+      +-----+       +-----+
-` );
+// console.log( convert( `          +-----+
+//           |     |
+//    +------+  1  +------+
+//    |      |     |      |
+//    |      +-----+      |
+//    |                   |
+//    |                   |
+// +--v--+             +--v--+
+// |     |             |     |
+// |  2  |         +---+  3  +---+
+// |     |         |   |     |   |
+// +--+--+         |   +-----+   |
+//    |            |             |
+//    |            |             |
+//    |            |             |
+// +--v--+      +--v--+       +--v--+
+// |     +------>     +------->     |
+// |  4  |      |  5  |       |  6  |
+// |     <------+     <-------+     |
+// +-----+      +-----+       +-----+
+// ` ) );
 
-console.log( convert( `          +-----+
-          |     |
-   +------+  1  +------+
-   |      |     |      |
-   |      +-----+      |
-   |                   |
-   |                   |
-+--v--+             +--v--+
-|     |             |     |
-|  2  |         +---+  3  +---+
-|     |         |   |     |   |
-+--+--+         |   +-----+   |
-   |            |             |
-   |            |             |
-   |            |             |
-+--v--+      +--v--+       +--v--+
-|     +------>     +------->     |
-|  4  |      |  5  |       |  6  |
-|     <------+     <-------+     |
-+-----+      +-----+       +-----+
-` ) );
+
 
 convert.light = light;
 convert.heavy = heavy;

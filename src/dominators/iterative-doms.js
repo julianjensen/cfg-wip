@@ -31,6 +31,7 @@ function IterativeDoms( nodes, postDom = false )
      */
     function fidoms( b )
     {
+        console.log( `fidoms order ${b.id + 1}, post: ${b.post + 1}` );
         if ( b === top ) return;
 
         let idom = null;
@@ -62,6 +63,7 @@ function IterativeDoms( nodes, postDom = false )
 
     while ( changed )
     {
+        console.log( 'CHK WALK' );
         changed = false;
         DFS( nodes, { rpost: fidoms, POSTDOM: postDom } );
     }

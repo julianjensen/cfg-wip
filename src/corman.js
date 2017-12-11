@@ -90,14 +90,14 @@ const
     ],
     plookup                         = [ 'start', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'end' ],
     slide                           = [
-        [ 1, 2, 9 ],    // start
-        [ 2, 3, 4 ],    // a
-        [ 3, 4 ],       // b
-        [ 4, 5, 6 ],    // c
-        [ 5, 7 ],       // d
-        [ 6, 7 ],       // e
-        [ 7, 8, 3 ],    // f
-        [ 8, 9 ],       // g
+        [ 1, 2, 9 ],    // start    1 8
+        [ 2, 3, 4 ],    // a        2 3
+        [ 3, 4 ],       // b        3
+        [ 4, 5, 6 ],    // c        4 5
+        [ 5, 7 ],       // d        6
+        [ 6, 7 ],       // e        6
+        [ 7, 8, 3 ],    // f        7 2
+        [ 8, 9 ],       // g        8
         [ 9 ]           // end
     ],
     front                           = [
@@ -332,17 +332,13 @@ class Node
     toTable()
     {
         const
-            wkNums   = `${this.chkDomTreeNodes()}`,
-            fronts   = [ ...this.frontier ].map( n => n.id + 1 ).join( ' ' ),
-            ltFronts = '', // ( this.ltFrontier || [] ).map( n => n.id + 1 ).join( ' ' ),
             preds    = this.preds.length ? this.preds.map( n => n.id + 1 ).join( ' ' ) : ' ',
             succs    = this.succs.length ? this.succs.map( n => n.id + 1 ).join( ' ' ) : ' ',
             pre      = this.pre + 1,
             post     = this.post + 1,
-            rpost    = this.rpost + 1,
-            domBy    = ''; // this.domTreeNodes(); // idomN() + 1;
+            rpost    = this.rpost + 1;
 
-        return [ this.name, succs, preds, pre, post, rpost, this.preNumber + 1, this.postNumber + 1, wkNums, fronts, ltFronts, domBy ];
+        return [ this.name, succs, preds, pre, post, rpost ];
         //  [ ...this.strictDominatorsOf() ].map( b => b.pre + 1 ) ];
     }
 }
@@ -386,19 +382,25 @@ class NodeList
                     to.parent  = from;
                     from.child = to;
                 }
-            }
+            },
+            pre: n => { console.log( ( n.pre + 1 ) + ' -> pre:' + ( n.id + 1 ) ); },
+            rpost: n => console.log( 'rpost:' + ( n.id + 1 ) )
         };
 
+        console.log( '' );
         this.maxPreNum  = DFS( this, cbs );
         this.preOrder   = cbs.preOrder;
+        console.log( `raw preOrder: ${this.preOrder.map( n => n.id + 1 )}` );
         this.postOrder  = cbs.postOrder;
         this.rPreOrder  = cbs.revPreOrder;
         this.rPostOrder = cbs.revPostOrder;
 
+
+
         this.bfsOrder = BFS( this.startNode );
 
         this.chkTree  = new DominatorTree( this, IterativeDoms( this ), 'CHK Dominator Tree', postDom ).toTable();
-        this.yaltTree = new DominatorTree( this, YALT( this ), 'YALT Dominator Tree', postDom ).toTable();
+        // this.yaltTree = new DominatorTree( this, YALT( this ), 'YALT Dominator Tree', postDom ).toTable();
     }
 
     /**
@@ -504,32 +506,75 @@ class NodeList
      */
     toString()
     {
-        const headers = [ 'Name', 'Succs', 'Preds', 'pre', 'post', 'rpost', 'preN', 'postN', 'Dom', 'Frontier', 'LT Frontier', 'Dom. by' ];
-        let r         = `
-           ┌─────┐
-           │     │
-    ┌──────┤  1  ├──────┐
-    │      │     │      │
-    │      └─────┘      │
-    │                   │
-    │                   │
- ┌──v──┐             ┌──v──┐
- │     │             │     │
- │  3  │         ┌───┤  2  ├───┐
- │     │         │   │     │   │
- └──┬──┘         │   └─────┘   │
-    │            │             │
-    │            │             │
-    │            │             │
- ┌──v──┐      ┌──v──┐       ┌──v──┐
- │     ├──────>     ├───────>     │
- │  4  │      │  5  │       │  6  │
- │     <──────┤     <───────┤     │
- └─────┘      └─────┘       └─────┘
-
+        const headers = [ 'Name', 'Succs', 'Preds', 'pre', 'post', 'rpost' ];
+        let r = `          ┌─────────┐
+┌─────────┤ START 0 │
+│         └────┬────┘
+│              │
+│              V
+│            ┌───┐
+│     ┌──────┤ 1 │
+│     │      └─┬─┘
+│     │        │
+│     │        V
+│     │      ┌───┐
+│     │      │ 2 │<───────────┐
+│     │      └─┬─┘            │
+│     │        │              │
+│     │        V              │
+│     │      ┌───┐            │
+│     └─────>│   │            │
+│     ┌──────┤ 3 ├──────┐     │
+│     │      └───┘      │     │
+│     │                 │     │
+│     V                 V     │
+│   ┌───┐             ┌───┐   │
+│   │ 4 │             │ 5 │   │
+│   └─┬─┘             └─┬─┘   │
+│     │                 │     │
+│     │                 │     │
+│     │      ┌───┐      │     │
+│     └─────>│ 6 │<─────┘     │
+│            │   ├────────────┘
+│            └─┬─┘
+│              │
+│              V
+│            ┌───┐
+│            │ 7 │
+│            └─┬─┘
+│              │
+│              V
+│         ┌─────────┐
+└────────>│  EXIT 8 │
+          └─────────┘
 `;
+//         let r         = `
+//            ┌─────┐
+//            │     │
+//     ┌──────┤  1  ├──────┐
+//     │      │     │      │
+//     │      └─────┘      │
+//     │                   │
+//     │                   │
+//  ┌──v──┐             ┌──v──┐
+//  │     │             │     │
+//  │  3  │         ┌───┤  2  ├───┐
+//  │     │         │   │     │   │
+//  └──┬──┘         │   └─────┘   │
+//     │            │             │
+//     │            │             │
+//     │            │             │
+//  ┌──v──┐      ┌──v──┐       ┌──v──┐
+//  │     ├──────>     ├───────>     │
+//  │  4  │      │  5  │       │  6  │
+//  │     <──────┤     <───────┤     │
+//  └─────┘      └─────┘       └─────┘
+//
+// `;
 
-        // r += str_table( 'Nodes added order', headers, this.nodes.map( n => n.toTable() ) ) + '\n';
+        // r = r.replace( /(\d+)/g, ( $0, $1 ) => Number( $1 ) + 1 );
+
+        r += str_table( 'Nodes added order', headers, this.nodes.map( n => n.toTable() ) ) + '\n';
         // r += str_table( 'Nodes pre order', headers, this.preOrder.map( n => n.toTable() ) ) + '\n';
         // r += str_table( 'Nodes post order', headers, this.postOrder.map( n => n.toTable() ) ) + '\n';
         // r += str_table( 'Nodes reverse post order', headers, this.rPostOrder.map( n => n.toTable() ) ) + '\n';
@@ -603,7 +648,7 @@ class NodeList
 }
 
 /** @type {NodeList<Node>} */
-const one = new NodeList( slide, true );
+const one = new NodeList( slide );
 
 log( `${one}` );
 if ( process.argv[ 2 ] ) fs.writeFileSync( process.argv[ 2 ], one.toDot( 'slide', 'name', plookup ) );

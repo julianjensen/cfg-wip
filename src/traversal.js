@@ -52,10 +52,12 @@ function DFS( list, cbs = {} )
         preOrder.push( u );
         running.add( u );
 
+        // console.log( `enter dfs for ${u.id + 1}` );
         // pre( u );
 
         for ( const v of u[ outEdges ] )
         {
+            // console.log( `walker for ${u.id + 1} -> ${v.id + 1} from succs = ${u.succs.map( s => s.id + 1 ).join( ' ' )}` );
             if ( visit( v ) ) process( u, v );
             else if ( running.has( v ) ) add_edge( u, v, 'back' );
             else if ( u.pre < v.pre ) add_edge( u, v, 'forward' );
@@ -65,6 +67,7 @@ function DFS( list, cbs = {} )
         running.delete( u );
         u.post = postOrderN++;
 
+        console.log( `exit dfs for ${u.id + 1} with post: ${u.post + 1}` );
         postOrder.push( u );
         u.rpost = rpostCnt--;
         // post( u );
@@ -79,8 +82,8 @@ function DFS( list, cbs = {} )
     cbs.postOrder = postOrder;
     if ( cbs.pre ) preOrder.forEach( pre );
     if ( cbs.post ) postOrder.forEach( post );
-    rpost( cbs.revPostOrder = postOrder.reverse() );
-    rpre( cbs.revPreOrder = preOrder.reverse() );
+    rpost( cbs.revPostOrder = postOrder.slice().reverse() );
+    rpre( cbs.revPreOrder = preOrder.slice().reverse() );
 
     return preOrderN;
 }

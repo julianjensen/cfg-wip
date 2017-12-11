@@ -1,5 +1,5 @@
 {
-    "name": "dominators",
+    "name": "cfg-wip",
     "version": "1.0.0",
     "description": "CFG and dominators",
     "main": "index.js",
