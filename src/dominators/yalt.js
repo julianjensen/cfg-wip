@@ -122,7 +122,7 @@ function YALT( nodes, postDom = false )
 
     DFS( nodes, {
         rpre: node => {
-
+console.log( `rpre: ${node.id + 1}` );
             if ( node === skip ) return;
 
             const
@@ -131,6 +131,7 @@ function YALT( nodes, postDom = false )
 
             for ( const v of outEdges[ w ] )
             {
+console.log( `yalt proc ${w + 1} edges ${outEdges[ w ].map( n => n + 1 ).join( ' ' )}` );
                 const u = _eval( v );
 
                 if ( semi[ w ] > semi[ u ] )
